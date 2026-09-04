@@ -1,0 +1,2569 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import * as XLSX from 'xlsx';
+import { SignOutButton } from './sign-out-button';
+
+type ProjectStatus = 'new' | 'progress' | 'done' | 'blocked' | 'waiting';
+type TaskStatus = 'not_started' | 'progress' | 'blocked' | 'review' | 'done';
+type Priority = 'critical' | 'high' | 'medium' | 'low';
+type FilterType = 'all' | 'mine' | 'overdue' | 'week' | 'high' | 'blocked' | 'done';
+
+interface Task {
+  id: number;
+  title: string;
+  status: TaskStatus;
+  receivedAt: string;
+  deadline: string;
+  completedAt?: string;
+  responsible?: string;
+  engineer?: string;
+  comments?: Array<{ author: string; date: string; text: string }>;
+  customFields?: Record<string, string>;
+}
+
+interface Project {
+  id: number;
+  name: string;
+  receivedAt: string;
+  deadline: string;
+  completedAt?: string;
+  customer: string;
+  pss: string;
+  reg: string;
+  status: ProjectStatus;
+  priority: Priority;
+  responsible: string;
+  engineer: string;
+  expanded: boolean;
+  tasks: Task[];
+  comments?: Array<{ author: string; date: string; text: string }>;
+  customFields?: Record<string, string>;
+  history?: Array<{ date: string; user: string; action: string; details: string }>;
+  attachments?: Array<{ id: string; name: string; size: number; uploadedAt: string; data: string }>;
+  emailNotifications?: Array<{ email: string; sentAt: string; type: string }>;
+}
+
+interface CustomColumn {
+  id: string;
+  label: string;
+  visible: boolean;
+}
+
+const PRIORITY_LABELS: Record<Priority, string> = {
+  critical: 'Критический',
+  high: 'Высокий',
+  medium: 'Средний',
+  low: 'Низкий'
+};
+
+const STATUS_LABELS: Record<ProjectStatus, string> = {
+  new: 'Новый',
+  progress: 'В работе',
+  done: 'Завершён',
+  blocked: 'Заблокирован',
+  waiting: 'Ожидание'
+};
+
+const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  not_started: 'Не начата',
+  progress: 'В работе',
+  blocked: 'Заблокирована',
+  review: 'На проверке',
+  done: 'Выполнена'
+};
+
+type UserRole = 'admin' | 'manager' | 'engineer' | 'viewer' | 'none';
+
+interface StoredUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  permissions: {
+    canCreate: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+    canExport: boolean;
+    canManageColumns: boolean;
+    canViewAll: boolean;
+  };
+  createdAt: string;
+  status: 'active' | 'pending' | 'blocked';
+}
+
+const TODAY = new Date('2026-09-01T00:00:00');
+const CURRENT_USER = 'Борис';
+
+const getCurrentUserPermissions = () => {
+  const usersJson = localStorage.getItem('users');
+  if (!usersJson) {
+    // Default admin permissions
+    return {
+      canCreate: true,
+      canEdit: true,
+      canDelete: true,
+      canExport: true,
+      canManageColumns: true,
+      canViewAll: true
+    };
+  }
+
+  const users: StoredUser[] = JSON.parse(usersJson);
+  const currentUser = users.find(u => u.name === CURRENT_USER);
+
+  if (!currentUser || currentUser.status === 'blocked') {
+    return {
+      canCreate: false,
+      canEdit: false,
+      canDelete: false,
+      canExport: false,
+      canManageColumns: false,
+      canViewAll: false
+    };
+  }
+
+  return currentUser.permissions;
+};
+
+const getCurrentUserRole = (): string => {
+  const usersJson = localStorage.getItem('users');
+  if (!usersJson) return 'admin';
+
+  const users: StoredUser[] = JSON.parse(usersJson);
+  const currentUser = users.find(u => u.name === CURRENT_USER);
+  return currentUser?.role || 'viewer';
+};
+
+const DEMO_PROJECTS: Project[] = [
+  {
+    id: 1,
+    name: 'ЖК Южный',
+    receivedAt: '2026-07-01',
+    deadline: '2026-08-28',
+    customer: 'Стройинвест',
+    pss: 'PSS-102',
+    reg: 'Р-58',
+    status: 'blocked',
+    priority: 'critical',
+    responsible: 'Борис',
+    engineer: 'Смирнов А.',
+    expanded: false,
+    tasks: [
+      { id: 11, title: 'Согласовать монтажную схему', status: 'done', receivedAt: '2026-07-02', deadline: '2026-07-20' },
+      { id: 12, title: 'Заказать направляющие', status: 'progress', receivedAt: '2026-07-10', deadline: '2026-08-15' },
+      { id: 13, title: 'Проверить шахту лифта', status: 'not_started', receivedAt: '', deadline: '2026-08-25' }
+    ]
+  },
+  {
+    id: 2,
+    name: 'БЦ Ривер Плаза',
+    receivedAt: '2026-07-15',
+    deadline: '2026-09-02',
+    customer: 'РиверДевелопмент',
+    pss: 'PSS-118',
+    reg: 'Р-61',
+    status: 'progress',
+    priority: 'high',
+    responsible: 'Мария',
+    engineer: 'Ковалёв Д.',
+    expanded: false,
+    tasks: [
+      { id: 21, title: 'Получить архитектурные чертежи', status: 'done', receivedAt: '2026-07-16', deadline: '2026-07-30' },
+      { id: 22, title: 'Расчёт грузоподъёмности', status: 'progress', receivedAt: '', deadline: '2026-08-28' }
+    ]
+  },
+  {
+    id: 3,
+    name: 'ЖК Лесная Поляна',
+    receivedAt: '2026-06-20',
+    deadline: '2026-09-20',
+    customer: 'ЛесСтрой',
+    pss: 'PSS-095',
+    reg: 'Р-49',
+    status: 'new',
+    priority: 'medium',
+    responsible: 'Алексей',
+    engineer: 'Титов П.',
+    expanded: false,
+    tasks: [
+      { id: 31, title: 'Собрать пакет документов', status: 'progress', receivedAt: '', deadline: '2026-09-10' }
+    ]
+  },
+  {
+    id: 4,
+    name: 'ЖК Центральный',
+    receivedAt: '2026-05-10',
+    deadline: '2026-09-05',
+    customer: 'ЦентрГрупп',
+    pss: 'PSS-081',
+    reg: 'Р-40',
+    status: 'progress',
+    priority: 'high',
+    responsible: 'Иван',
+    engineer: 'Смирнов А.',
+    expanded: false,
+    tasks: [
+      { id: 41, title: 'Проверить машинное помещение', status: 'done', receivedAt: '2026-05-12', deadline: '2026-06-01' },
+      { id: 42, title: 'Пуско-наладка', status: 'not_started', receivedAt: '', deadline: '2026-09-04' }
+    ]
+  },
+  {
+    id: 5,
+    name: 'ЖК Прибрежный',
+    receivedAt: '2026-07-25',
+    deadline: '2026-09-10',
+    customer: 'БерегИнвест',
+    pss: 'PSS-126',
+    reg: 'Р-66',
+    status: 'progress',
+    priority: 'high',
+    responsible: 'Мария',
+    engineer: 'Ковалёв Д.',
+    expanded: true,
+    tasks: [
+      { id: 51, title: 'Запросить архитектурные чертежи', status: 'not_started', receivedAt: '2026-07-26', deadline: '2026-08-05' },
+      { id: 52, title: 'Проверить высоту подъёма', status: 'not_started', receivedAt: '', deadline: '2026-09-01' },
+      { id: 53, title: 'Проверить машинное помещение', status: 'not_started', receivedAt: '', deadline: '2026-09-09' }
+    ]
+  }
+];
+
+export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [currentUserRole, setCurrentUserRole] = useState<string>('admin');
+  const [permissions, setPermissions] = useState({
+    canCreate: true,
+    canEdit: true,
+    canDelete: true,
+    canExport: true,
+    canManageColumns: true,
+    canViewAll: true
+  });
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editingTask, setEditingTask] = useState<{ projectId: number; task: Task } | null>(null);
+  const [showProjectComments, setShowProjectComments] = useState<number | null>(null);
+  const [showTaskComments, setShowTaskComments] = useState<{ projectId: number; taskId: number } | null>(null);
+  const [showProjectHistory, setShowProjectHistory] = useState<number | null>(null);
+  const [showProjectAttachments, setShowProjectAttachments] = useState<number | null>(null);
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
+  const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
+  const [columnOrder, setColumnOrder] = useState<string[]>([
+    'priority', 'name', 'receivedAt', 'deadline', 'completedAt', 'customer', 'pss', 'reg', 'status', 'responsible', 'engineer'
+  ]);
+  const [visibleColumns, setVisibleColumns] = useState({
+    priority: true,
+    name: true,
+    receivedAt: true,
+    deadline: true,
+    completedAt: true,
+    customer: true,
+    pss: true,
+    reg: true,
+    status: true,
+    responsible: true,
+    engineer: true
+  });
+  const [showEmailSettings, setShowEmailSettings] = useState(false);
+  const [emailSettings, setEmailSettings] = useState({
+    enabled: false,
+    email: '',
+    notifyDays: 3
+  });
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
+    priority: 120,
+    name: 250,
+    receivedAt: 140,
+    deadline: 140,
+    completedAt: 150,
+    customer: 180,
+    pss: 100,
+    reg: 140,
+    status: 130,
+    responsible: 150,
+    engineer: 150
+  });
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
+
+  // Reload permissions when component mounts or when users change
+  useEffect(() => {
+    const updatePermissions = () => {
+      setPermissions(getCurrentUserPermissions());
+      setCurrentUserRole(getCurrentUserRole());
+    };
+
+    updatePermissions();
+
+    // Listen for storage changes (when admin updates permissions)
+    window.addEventListener('storage', updatePermissions);
+    return () => window.removeEventListener('storage', updatePermissions);
+  }, []);
+
+  // Load data from localStorage on mount
+  useEffect(() => {
+    const savedProjects = localStorage.getItem('projects');
+    const savedCustomColumns = localStorage.getItem('customColumns');
+    const savedColumnOrder = localStorage.getItem('columnOrder');
+    const savedVisibleColumns = localStorage.getItem('visibleColumns');
+    const savedEmailSettings = localStorage.getItem('emailSettings');
+    const savedColumnWidths = localStorage.getItem('columnWidths');
+
+    if (savedProjects) {
+      setProjects(JSON.parse(savedProjects));
+    } else {
+      setProjects(DEMO_PROJECTS);
+    }
+
+    if (savedCustomColumns) {
+      setCustomColumns(JSON.parse(savedCustomColumns));
+    }
+
+    if (savedColumnOrder) {
+      setColumnOrder(JSON.parse(savedColumnOrder));
+    }
+
+    if (savedVisibleColumns) {
+      setVisibleColumns(JSON.parse(savedVisibleColumns));
+    }
+
+    if (savedEmailSettings) {
+      setEmailSettings(JSON.parse(savedEmailSettings));
+    }
+
+    if (savedColumnWidths) {
+      setColumnWidths(JSON.parse(savedColumnWidths));
+    }
+  }, []);
+
+  // Save projects to localStorage whenever they change
+  useEffect(() => {
+    if (projects.length > 0) {
+      localStorage.setItem('projects', JSON.stringify(projects));
+    }
+  }, [projects]);
+
+  // Save custom columns to localStorage
+  useEffect(() => {
+    localStorage.setItem('customColumns', JSON.stringify(customColumns));
+  }, [customColumns]);
+
+  // Save column order to localStorage
+  useEffect(() => {
+    localStorage.setItem('columnOrder', JSON.stringify(columnOrder));
+  }, [columnOrder]);
+
+  // Save visible columns to localStorage
+  useEffect(() => {
+    localStorage.setItem('visibleColumns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  // Save email settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('emailSettings', JSON.stringify(emailSettings));
+  }, [emailSettings]);
+
+  // Save column widths to localStorage
+  useEffect(() => {
+    localStorage.setItem('columnWidths', JSON.stringify(columnWidths));
+  }, [columnWidths]);
+
+  const daysUntil = (dateStr: string): number | null => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr + 'T00:00:00');
+    return Math.round((d.getTime() - TODAY.getTime()) / 86400000);
+  };
+
+  // Check for notifications and send emails periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!('Notification' in window)) return;
+
+      const upcomingDeadlines = projects.filter(p => {
+        if (p.status === 'done') return false;
+        const days = daysUntil(p.deadline);
+        return days !== null && days >= 0 && days <= 1;
+      });
+
+      upcomingDeadlines.forEach(project => {
+        const days = daysUntil(project.deadline);
+        const notificationKey = `notified_${project.id}_${project.deadline}`;
+
+        if (!localStorage.getItem(notificationKey)) {
+          if (Notification.permission === 'granted') {
+            new Notification('⚠️ Приближается дедлайн', {
+              body: `Проект "${project.name}" - ${days === 0 ? 'сегодня' : 'завтра'}!`,
+              icon: '/favicon.ico'
+            });
+            localStorage.setItem(notificationKey, 'true');
+          }
+        }
+      });
+
+      // Send email notifications if enabled
+      if (emailSettings.enabled && emailSettings.email) {
+        const emailDeadlines = projects.filter(p => {
+          if (p.status === 'done') return false;
+          const days = daysUntil(p.deadline);
+          return days !== null && days >= 0 && days <= emailSettings.notifyDays;
+        });
+
+        emailDeadlines.forEach(project => {
+          const days = daysUntil(project.deadline);
+          const emailKey = `emailed_${project.id}_${project.deadline}`;
+
+          if (!localStorage.getItem(emailKey)) {
+            sendEmailNotification(project, days || 0);
+            localStorage.setItem(emailKey, 'true');
+          }
+        });
+      }
+    }, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [projects, emailSettings]);
+
+  const requestNotificationPermission = () => {
+    if (!('Notification' in window)) {
+      alert('Ваш браузер не поддерживает уведомления');
+      return;
+    }
+
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          new Notification('Уведомления включены', {
+            body: 'Вы будете получать напоминания о дедлайнах'
+          });
+        }
+      });
+    }
+  };
+
+  const sendEmailNotification = async (project: Project, daysUntil: number) => {
+    if (!emailSettings.email) return;
+
+    const subject = `⚠️ Приближается дедлайн проекта: ${project.name}`;
+    const body = `
+Здравствуйте!
+
+Напоминаем, что до дедлайна проекта "${project.name}" осталось ${daysUntil === 0 ? 'меньше суток' : `${daysUntil} дн.`}
+
+Детали проекта:
+- Заказчик: ${project.customer}
+- Дедлайн: ${formatDate(project.deadline)}
+- Статус: ${STATUS_LABELS[project.status]}
+- Приоритет: ${PRIORITY_LABELS[project.priority]}
+- Ответственный: ${project.responsible}
+
+С уважением,
+Система управления проектами
+    `.trim();
+
+    try {
+      // Using mailto link (opens email client)
+      const mailtoLink = `mailto:${emailSettings.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+      // Log notification (in real app, this would call backend API to send email)
+      console.log('Email notification:', { to: emailSettings.email, subject, body });
+
+      // Store notification in project history
+      setProjects(prev => prev.map(p => {
+        if (p.id === project.id) {
+          return {
+            ...p,
+            emailNotifications: [
+              ...(p.emailNotifications || []),
+              {
+                email: emailSettings.email,
+                sentAt: new Date().toISOString(),
+                type: 'deadline_reminder'
+              }
+            ]
+          };
+        }
+        return p;
+      }));
+
+      addHistory(project.id, 'Отправлено email-уведомление', `На адрес ${emailSettings.email} о приближающемся дедлайне`);
+    } catch (error) {
+      console.error('Failed to send email notification:', error);
+    }
+  };
+
+  const deadlineClass = (dateStr: string): string => {
+    const days = daysUntil(dateStr);
+    if (days === null) return '';
+    if (days <= 0) return 'bg-red-50';
+    if (days <= 3) return 'bg-yellow-50';
+    return '';
+  };
+
+  const matchesFilter = (p: Project): boolean => {
+    // Check permissions first
+    if (!permissions.canViewAll) {
+      // Engineers and viewers can only see their own projects
+      if (p.responsible !== CURRENT_USER && p.engineer !== CURRENT_USER) {
+        return false;
+      }
+    }
+
+    switch (activeFilter) {
+      case 'mine':
+        return p.responsible === CURRENT_USER;
+      case 'overdue':
+        return (daysUntil(p.deadline) ?? 0) < 0;
+      case 'week':
+        const days = daysUntil(p.deadline);
+        return days !== null && days >= 0 && days <= 7;
+      case 'high':
+        return p.priority === 'high' || p.priority === 'critical';
+      case 'blocked':
+        return p.status === 'blocked';
+      case 'done':
+        return p.status === 'done';
+      default:
+        return true;
+    }
+  };
+
+  const canEditProject = (project: Project): boolean => {
+    if (!permissions.canEdit) return false;
+    if (currentUserRole === 'engineer') {
+      // Engineers can only edit projects where they are responsible or engineer
+      return project.responsible === CURRENT_USER || project.engineer === CURRENT_USER;
+    }
+    return true;
+  };
+
+  const matchesSearch = (p: Project, q: string): boolean => {
+    if (!q) return true;
+    q = q.toLowerCase();
+    const haystack = [
+      p.name,
+      p.customer,
+      p.pss,
+      p.reg,
+      p.responsible,
+      p.engineer,
+      ...p.tasks.map(t => t.title)
+    ].join(' ').toLowerCase();
+    return haystack.includes(q);
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortProjects = (projectsList: Project[]): Project[] => {
+    if (!sortField) return projectsList;
+
+    return [...projectsList].sort((a, b) => {
+      let aVal: any = a[sortField as keyof Project];
+      let bVal: any = b[sortField as keyof Project];
+
+      // Handle priority sorting
+      if (sortField === 'priority') {
+        const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        aVal = priorityOrder[a.priority];
+        bVal = priorityOrder[b.priority];
+      }
+
+      // Handle status sorting
+      if (sortField === 'status') {
+        const statusOrder = { blocked: 0, new: 1, progress: 2, waiting: 3, done: 4 };
+        aVal = statusOrder[a.status];
+        bVal = statusOrder[b.status];
+      }
+
+      // Handle date sorting
+      if (sortField === 'deadline' || sortField === 'receivedAt' || sortField === 'completedAt') {
+        aVal = new Date(aVal || '9999-12-31').getTime();
+        bVal = new Date(bVal || '9999-12-31').getTime();
+      }
+
+      // Handle string sorting
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || '').toLowerCase();
+      }
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
+  const filteredProjects = sortProjects(
+    projects.filter(p => matchesFilter(p) && matchesSearch(p, searchQuery))
+  );
+
+  const COLUMN_LABELS: Record<string, string> = {
+    priority: 'Приоритет',
+    name: 'Проект',
+    receivedAt: 'Дата поступления',
+    deadline: 'Дедлайн',
+    completedAt: 'Дата выполнения',
+    customer: 'Заказчик',
+    pss: 'PSS',
+    reg: 'Номер регистрации',
+    status: 'Статус',
+    responsible: 'Ответственный',
+    engineer: 'Инженер'
+  };
+
+  const getColumnLabel = (colId: string): string => {
+    if (colId in COLUMN_LABELS) {
+      return COLUMN_LABELS[colId];
+    }
+    const customCol = customColumns.find(c => c.id === colId);
+    return customCol?.label || colId;
+  };
+
+  const isColumnVisible = (colId: string): boolean => {
+    if (colId in visibleColumns) {
+      return visibleColumns[colId as keyof typeof visibleColumns];
+    }
+    const customCol = customColumns.find(c => c.id === colId);
+    return customCol?.visible ?? false;
+  };
+
+  const toggleBuiltInColumn = (col: keyof typeof visibleColumns) => {
+    setVisibleColumns(prev => ({ ...prev, [col]: !prev[col] }));
+  };
+
+  const moveColumn = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    const newOrder = [...columnOrder];
+    const [movedCol] = newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, movedCol);
+    setColumnOrder(newOrder);
+  };
+
+  const updateCustomField = (projectId: number, colId: string, value: string) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          customFields: { ...p.customFields, [colId]: value }
+        };
+      }
+      return p;
+    }));
+  };
+
+  const toggleExpand = (id: number) => {
+    setProjects(projects.map(p => p.id === id ? { ...p, expanded: !p.expanded } : p));
+  };
+
+  const addCustomColumn = () => {
+    const label = prompt('Введите название столбца:');
+    if (!label || !label.trim()) return;
+    const newCol = {
+      id: `custom_${Date.now()}`,
+      label: label.trim(),
+      visible: true
+    };
+    setCustomColumns(prev => [...prev, newCol]);
+    setColumnOrder(prev => [...prev, newCol.id]);
+  };
+
+  const deleteCustomColumn = (colId: string) => {
+    if (!confirm('Удалить этот столбец?')) return;
+    setCustomColumns(prev => prev.filter(c => c.id !== colId));
+    setColumnOrder(prev => prev.filter(id => id !== colId));
+    // Clean up data
+    setProjects(prev => prev.map(p => ({
+      ...p,
+      customFields: Object.fromEntries(
+        Object.entries(p.customFields || {}).filter(([key]) => key !== colId)
+      ),
+      tasks: p.tasks.map(t => ({
+        ...t,
+        customFields: Object.fromEntries(
+          Object.entries(t.customFields || {}).filter(([key]) => key !== colId)
+        )
+      }))
+    })));
+  };
+
+  const toggleCustomColumn = (colId: string) => {
+    setCustomColumns(prev => prev.map(c =>
+      c.id === colId ? { ...c, visible: !c.visible } : c
+    ));
+  };
+
+  const PRIORITY_ORDER: Record<Priority, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3
+  };
+
+  const USERS = ['Борис', 'Мария', 'Алексей', 'Иван', 'Дмитрий', 'Анна', 'Сергей'];
+
+  const addHistory = (projectId: number, action: string, details: string) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          history: [
+            ...(p.history || []),
+            {
+              date: new Date().toISOString(),
+              user: 'Вы',
+              action,
+              details
+            }
+          ]
+        };
+      }
+      return p;
+    }));
+  };
+
+  const updateProject = (id: number, field: keyof Project, value: any) => {
+    const project = projects.find(p => p.id === id);
+    const oldValue = project?.[field];
+
+    let updated = projects.map(p => {
+      if (p.id === id) {
+        const updatedProject = { ...p, [field]: value };
+
+        // Auto-set completedAt when status changes to 'done'
+        if (field === 'status' && value === 'done' && !p.completedAt) {
+          updatedProject.completedAt = new Date().toISOString().split('T')[0];
+        }
+
+        // Clear completedAt when status changes from 'done' to something else
+        if (field === 'status' && value !== 'done' && p.completedAt) {
+          updatedProject.completedAt = undefined;
+        }
+
+        return updatedProject;
+      }
+      return p;
+    });
+
+    // Sort by priority when priority is changed
+    if (field === 'priority') {
+      updated.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+    }
+
+    setProjects(updated);
+
+    // Add history entry
+    if (oldValue !== value) {
+      const fieldNames: Record<string, string> = {
+        status: 'Статус',
+        priority: 'Приоритет',
+        responsible: 'Ответственный',
+        engineer: 'Инженер',
+        deadline: 'Дедлайн',
+        name: 'Название',
+        completedAt: 'Дата завершения'
+      };
+      const fieldName = fieldNames[field] || field;
+      addHistory(id, `Изменено поле "${fieldName}"`, `${oldValue} → ${value}`);
+    }
+  };
+
+  const updateTask = (projectId: number, taskId: number, field: keyof Task, value: any) => {
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          tasks: p.tasks.map(t => {
+            if (t.id === taskId) {
+              const updatedTask = { ...t, [field]: value };
+
+              // Auto-set completedAt when status changes to 'done'
+              if (field === 'status' && value === 'done' && !t.completedAt) {
+                updatedTask.completedAt = new Date().toISOString().split('T')[0];
+              }
+
+              // Clear completedAt when status changes from 'done' to something else
+              if (field === 'status' && value !== 'done' && t.completedAt) {
+                updatedTask.completedAt = undefined;
+              }
+
+              return updatedTask;
+            }
+            return t;
+          })
+        };
+      }
+      return p;
+    }));
+  };
+
+  const toggleTaskDone = (projectId: number, taskId: number) => {
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          tasks: p.tasks.map(t => {
+            if (t.id === taskId) {
+              const newStatus = t.status === 'done' ? 'not_started' : 'done';
+              const updatedTask = { ...t, status: newStatus };
+
+              // Set or clear completedAt
+              if (newStatus === 'done') {
+                updatedTask.completedAt = new Date().toISOString().split('T')[0];
+              } else {
+                updatedTask.completedAt = undefined;
+              }
+
+              return updatedTask;
+            }
+            return t;
+          })
+        };
+      }
+      return p;
+    }));
+  };
+
+  const addTask = (projectId: number) => {
+    const project = projects.find(p => p.id === projectId);
+    if (project && !canEditProject(project)) {
+      alert('У вас нет прав для добавления задач к этому проекту');
+      return;
+    }
+
+    const title = prompt('Название задачи:');
+    if (!title) return;
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        addHistory(projectId, 'Добавлена задача', title);
+        return {
+          ...p,
+          tasks: [...p.tasks, {
+            id: Date.now(),
+            title,
+            status: 'not_started' as TaskStatus,
+            receivedAt: '',
+            deadline: ''
+          }]
+        };
+      }
+      return p;
+    }));
+  };
+
+  const deleteProject = (id: number) => {
+    if (!permissions.canDelete) {
+      alert('У вас нет прав для удаления проектов');
+      return;
+    }
+    if (!confirm('Удалить проект и все его задачи?')) return;
+    setProjects(projects.filter(p => p.id !== id));
+  };
+
+  const deleteTask = (projectId: number, taskId: number) => {
+    const project = projects.find(p => p.id === projectId);
+    if (project && !canEditProject(project)) {
+      alert('У вас нет прав для удаления задач из этого проекта');
+      return;
+    }
+
+    if (!confirm('Удалить задачу?')) return;
+    const task = projects.find(p => p.id === projectId)?.tasks.find(t => t.id === taskId);
+    if (task) {
+      addHistory(projectId, 'Удалена задача', task.title);
+    }
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          tasks: p.tasks.filter(t => t.id !== taskId)
+        };
+      }
+      return p;
+    }));
+  };
+
+  const openEditModal = (project: Project) => {
+    setEditingProject(project);
+    setShowModal(true);
+  };
+
+  const openEditTaskModal = (projectId: number, task: Task) => {
+    setEditingTask({ projectId, task });
+  };
+
+  const openProjectComments = (projectId: number) => {
+    setShowProjectComments(projectId);
+  };
+
+  const updateTaskCustomField = (projectId: number, taskId: number, fieldId: string, value: string) => {
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          tasks: p.tasks.map(t =>
+            t.id === taskId
+              ? { ...t, customFields: { ...t.customFields, [fieldId]: value } }
+              : t
+          )
+        };
+      }
+      return p;
+    }));
+  };
+
+  const createProject = () => {
+    const name = (document.getElementById('f_name') as HTMLInputElement).value.trim();
+    if (!name) {
+      alert('Укажите название проекта');
+      return;
+    }
+
+    if (editingProject) {
+      // Update existing project
+      setProjects(projects.map(p => p.id === editingProject.id ? {
+        ...p,
+        name,
+        receivedAt: (document.getElementById('f_received') as HTMLInputElement).value || p.receivedAt,
+        deadline: (document.getElementById('f_deadline') as HTMLInputElement).value || p.deadline,
+        customer: (document.getElementById('f_customer') as HTMLInputElement).value,
+        pss: (document.getElementById('f_pss') as HTMLInputElement).value,
+        reg: (document.getElementById('f_reg') as HTMLInputElement).value,
+        status: (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus,
+        priority: (document.getElementById('f_priority') as HTMLSelectElement).value as Priority,
+        responsible: (document.getElementById('f_responsible') as HTMLInputElement).value,
+        engineer: (document.getElementById('f_engineer') as HTMLInputElement).value,
+      } : p));
+    } else {
+      // Create new project
+      const newProject: Project = {
+        id: Date.now(),
+        name,
+        receivedAt: (document.getElementById('f_received') as HTMLInputElement).value || '2026-09-01',
+        deadline: (document.getElementById('f_deadline') as HTMLInputElement).value || '2026-09-15',
+        customer: (document.getElementById('f_customer') as HTMLInputElement).value,
+        pss: (document.getElementById('f_pss') as HTMLInputElement).value,
+        reg: (document.getElementById('f_reg') as HTMLInputElement).value,
+        status: (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus,
+        priority: (document.getElementById('f_priority') as HTMLSelectElement).value as Priority,
+        responsible: (document.getElementById('f_responsible') as HTMLInputElement).value,
+        engineer: (document.getElementById('f_engineer') as HTMLInputElement).value,
+        expanded: false,
+        tasks: []
+      };
+      setProjects([newProject, ...projects]);
+    }
+
+    setShowModal(false);
+    setEditingProject(null);
+
+    // Reset form
+    ['f_name', 'f_received', 'f_deadline', 'f_customer', 'f_pss', 'f_reg', 'f_responsible', 'f_engineer'].forEach(id => {
+      (document.getElementById(id) as HTMLInputElement).value = '';
+    });
+  };
+
+  const getStatusColor = (status: ProjectStatus): string => {
+    const colors = {
+      new: 'bg-gray-100 text-gray-700',
+      progress: 'bg-blue-100 text-blue-700',
+      done: 'bg-green-100 text-green-700',
+      blocked: 'bg-red-100 text-red-700',
+      waiting: 'bg-yellow-100 text-yellow-700'
+    };
+    return colors[status];
+  };
+
+  const getTaskStatusColor = (status: TaskStatus): string => {
+    const colors = {
+      not_started: 'bg-gray-100 text-gray-700',
+      progress: 'bg-blue-100 text-blue-700',
+      blocked: 'bg-red-100 text-red-700',
+      review: 'bg-yellow-100 text-yellow-700',
+      done: 'bg-green-100 text-green-700'
+    };
+    return colors[status];
+  };
+
+  const getPriorityDotColor = (priority: Priority): string => {
+    const colors = {
+      critical: 'bg-red-600',
+      high: 'bg-orange-500',
+      medium: 'bg-yellow-500',
+      low: 'bg-green-600'
+    };
+    return colors[priority];
+  };
+
+  const getPriorityTextColor = (priority: Priority): string => {
+    const colors = {
+      critical: 'text-red-600',
+      high: 'text-orange-500',
+      medium: 'text-yellow-600',
+      low: 'text-green-600'
+    };
+    return colors[priority];
+  };
+
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return '—';
+    const [y, m, d] = dateStr.split('-');
+    return `${d}.${m}.${y}`;
+  };
+
+  const handleColumnResize = (colId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    setResizingColumn(colId);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(columnWidths[colId] || 150);
+  };
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - resizeStartX;
+      const newWidth = Math.max(80, resizeStartWidth + delta);
+      setColumnWidths(prev => ({ ...prev, [resizingColumn]: newWidth }));
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth]);
+
+  const exportToExcel = () => {
+    const data = projects.map(project => ({
+      'Проект': project.name,
+      'Заказчик': project.customer,
+      'PSS': project.pss,
+      'Регистрация': project.reg,
+      'Статус': STATUS_LABELS[project.status],
+      'Приоритет': PRIORITY_LABELS[project.priority],
+      'Дата поступления': project.receivedAt,
+      'Дедлайн': project.deadline,
+      'Ответственный': project.responsible,
+      'Инженер': project.engineer,
+      'Количество задач': project.tasks.length,
+      'Выполнено задач': project.tasks.filter(t => t.status === 'done').length
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Проекты');
+
+    // Add tasks sheet
+    const tasksData: any[] = [];
+    projects.forEach(project => {
+      project.tasks.forEach(task => {
+        tasksData.push({
+          'Проект': project.name,
+          'Задача': task.title,
+          'Статус': TASK_STATUS_LABELS[task.status],
+          'Дата поступления': task.receivedAt || '—',
+          'Дедлайн': task.deadline,
+          'Ответственный': task.responsible || '—',
+          'Инженер': task.engineer || '—'
+        });
+      });
+    });
+    const wsTasksSheet = XLSX.utils.json_to_sheet(tasksData);
+    XLSX.utils.book_append_sheet(wb, wsTasksSheet, 'Задачи');
+
+    const fileName = `проекты_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  const exportToCSV = () => {
+    const data = projects.map(project => ({
+      'Проект': project.name,
+      'Заказчик': project.customer,
+      'PSS': project.pss,
+      'Регистрация': project.reg,
+      'Статус': STATUS_LABELS[project.status],
+      'Приоритет': PRIORITY_LABELS[project.priority],
+      'Дата поступления': project.receivedAt,
+      'Дедлайн': project.deadline,
+      'Ответственный': project.responsible,
+      'Инженер': project.engineer,
+      'Количество задач': project.tasks.length,
+      'Выполнено задач': project.tasks.filter(t => t.status === 'done').length
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const csv = XLSX.utils.sheet_to_csv(ws);
+
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `проекты_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const handleFileUpload = (projectId: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = e.target?.result as string;
+        const attachment = {
+          id: `${Date.now()}_${Math.random()}`,
+          name: file.name,
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+          data: base64
+        };
+
+        setProjects(prev => prev.map(p => {
+          if (p.id === projectId) {
+            addHistory(projectId, 'Добавлен файл', file.name);
+            return {
+              ...p,
+              attachments: [...(p.attachments || []), attachment]
+            };
+          }
+          return p;
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const deleteAttachment = (projectId: number, attachmentId: string) => {
+    if (!confirm('Удалить файл?')) return;
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const attachment = p.attachments?.find(a => a.id === attachmentId);
+        if (attachment) {
+          addHistory(projectId, 'Удалён файл', attachment.name);
+        }
+        return {
+          ...p,
+          attachments: p.attachments?.filter(a => a.id !== attachmentId) || []
+        };
+      }
+      return p;
+    }));
+  };
+
+  const downloadAttachment = (attachment: { name: string; data: string }) => {
+    const link = document.createElement('a');
+    link.href = attachment.data;
+    link.download = attachment.name;
+    link.click();
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Banner */}
+      <div className="bg-blue-50 border-b border-blue-200 text-blue-800 text-xs py-2 px-5 text-center">
+        All changes are automatically saved in the browser
+      </div>
+
+      {/* Topbar */}
+      <div className="bg-white border-b border-gray-200 px-5 py-3 sticky top-0 z-20 flex items-center gap-3 flex-wrap">
+        <div className="font-bold text-blue-600 text-base">◆ Tracker</div>
+        <div className="font-semibold text-base">Проекты</div>
+        <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 text-sm">Статистика</Link>
+        <Link href="/calendar" className="text-gray-600 hover:text-gray-900 text-sm">Календарь</Link>
+        {currentUserRole === 'admin' && (
+          <Link href="/admin" className="text-gray-600 hover:text-gray-900 text-sm">👥 Пользователи</Link>
+        )}
+        <div className="flex-1 min-w-[180px] relative">
+          <div className="absolute left-3 top-2 text-gray-500">⌕</div>
+          <input
+            type="text"
+            placeholder="Поиск по проекту, заказчику, регистрации..."
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          {permissions.canExport && (
+            <>
+              <button
+                onClick={exportToExcel}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+                title="Экспорт в Excel"
+              >
+                📊 Excel
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+                title="Экспорт в CSV"
+              >
+                📄 CSV
+              </button>
+            </>
+          )}
+          {permissions.canManageColumns && (
+            <div className="relative">
+              <button
+              onClick={() => {
+                setShowColumnSelector(!showColumnSelector);
+                setShowNotifications(false);
+                setShowUserMenu(false);
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+            >
+              Столбцы
+            </button>
+            {showColumnSelector && (
+              <div className="absolute right-0 top-11 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-2 max-h-[500px] overflow-y-auto">
+                <div className="px-3 py-1 text-xs font-semibold text-gray-500 flex items-center justify-between">
+                  <span>Настройка столбцов</span>
+                  <button
+                    onClick={addCustomColumn}
+                    className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                  >
+                    + Добавить
+                  </button>
+                </div>
+                <div className="px-3 py-1 text-xs text-gray-500 mt-2">Перетащите для изменения порядка</div>
+                {columnOrder.map((colId, index) => {
+                  const isBuiltIn = colId in visibleColumns;
+                  const isVisible = isColumnVisible(colId);
+                  const label = getColumnLabel(colId);
+
+                  return (
+                    <div
+                      key={colId}
+                      draggable={colId !== 'name'}
+                      onDragStart={(e) => {
+                        if (colId === 'name') return;
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', index.toString());
+                      }}
+                      onDragOver={(e) => {
+                        if (colId === 'name') return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={(e) => {
+                        if (colId === 'name') return;
+                        e.preventDefault();
+                        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                        moveColumn(fromIndex, index);
+                      }}
+                      className={`flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-sm ${colId !== 'name' ? 'cursor-move' : ''}`}
+                    >
+                      <span className="text-gray-400">☰</span>
+                      <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isVisible}
+                          onChange={() => {
+                            if (isBuiltIn) {
+                              toggleBuiltInColumn(colId as keyof typeof visibleColumns);
+                            } else {
+                              toggleCustomColumn(colId);
+                            }
+                          }}
+                          disabled={colId === 'name'}
+                          className="rounded"
+                        />
+                        <span className={colId === 'name' ? 'text-gray-400' : ''}>{label}</span>
+                      </label>
+                      {!isBuiltIn && (
+                        <button
+                          onClick={() => deleteCustomColumn(colId)}
+                          className="text-red-600 hover:text-red-800 text-xs px-1"
+                          title="Удалить столбец"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            </div>
+          )}
+          {permissions.canCreate && (
+            <button
+              onClick={() => {
+                setEditingProject(null);
+                setShowModal(true);
+              }}
+              className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+            >
+              + Новый проект
+            </button>
+          )}
+          <button
+            onClick={() => setShowEmailSettings(!showEmailSettings)}
+            className="w-9 h-9 border border-gray-300 rounded-md flex items-center justify-center hover:bg-gray-50"
+            title="Настройки email-уведомлений"
+          >
+            📧
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowNotifications(!showNotifications);
+                setShowUserMenu(false);
+              }}
+              className="w-9 h-9 border border-gray-300 rounded-md flex items-center justify-center hover:bg-gray-50 relative"
+            >
+              🔔
+              {(() => {
+                const notificationCount = projects.filter(p => {
+                  if (p.status === 'done') return false;
+                  const days = daysUntil(p.deadline);
+                  return days !== null && days >= -7 && days <= 3;
+                }).length;
+                return notificationCount > 0 ? (
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                    {notificationCount}
+                  </span>
+                ) : null;
+              })()}
+            </button>
+            {showNotifications && (
+              <div className="absolute right-0 top-11 w-80 bg-white border border-gray-200 rounded-lg shadow-lg max-h-96 overflow-auto z-30">
+                <div className="px-3 py-2 font-semibold text-sm border-b border-gray-200 flex items-center justify-between">
+                  <span>Уведомления</span>
+                  {Notification.permission !== 'granted' && (
+                    <button
+                      onClick={requestNotificationPermission}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Включить
+                    </button>
+                  )}
+                </div>
+                {(() => {
+                  const upcomingDeadlines = projects.filter(p => {
+                    if (p.status === 'done') return false;
+                    const days = daysUntil(p.deadline);
+                    return days !== null && days >= -7 && days <= 3;
+                  }).sort((a, b) => {
+                    const daysA = daysUntil(a.deadline) ?? 999;
+                    const daysB = daysUntil(b.deadline) ?? 999;
+                    return daysA - daysB;
+                  });
+
+                  if (upcomingDeadlines.length === 0) {
+                    return (
+                      <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                        Нет активных уведомлений
+                      </div>
+                    );
+                  }
+
+                  return upcomingDeadlines.map(project => {
+                    const days = daysUntil(project.deadline);
+                    const isOverdue = days !== null && days < 0;
+                    const isUrgent = days !== null && days >= 0 && days <= 1;
+
+                    return (
+                      <div
+                        key={project.id}
+                        className="px-3 py-2 border-b border-gray-200 bg-blue-50 flex gap-2 text-sm hover:bg-blue-100 cursor-pointer"
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${
+                            isOverdue ? 'bg-red-600' : isUrgent ? 'bg-orange-500' : 'bg-blue-600'
+                          }`}
+                        ></span>
+                        <div>
+                          <div className="font-medium">{project.name}</div>
+                          <div className="text-xs text-gray-600">
+                            {isOverdue
+                              ? `Просрочен на ${Math.abs(days!)} дн.`
+                              : days === 0
+                              ? 'Дедлайн сегодня'
+                              : days === 1
+                              ? 'Дедлайн завтра'
+                              : `Осталось ${days} дн.`}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+          </div>
+          {showEmailSettings && (
+            <div className="absolute right-0 top-11 w-96 bg-white border border-gray-200 rounded-lg shadow-lg z-30 p-4">
+              <div className="font-semibold text-sm mb-3">Настройки email-уведомлений</div>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={emailSettings.enabled}
+                    onChange={(e) => setEmailSettings(prev => ({ ...prev, enabled: e.target.checked }))}
+                    className="rounded"
+                  />
+                  <span className="text-sm">Включить email-уведомления</span>
+                </label>
+                {emailSettings.enabled && (
+                  <>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Email для уведомлений</label>
+                      <input
+                        type="email"
+                        value={emailSettings.email}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="your@email.com"
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">
+                        Оповещать за сколько дней до дедлайна
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={emailSettings.notifyDays}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, notifyDays: parseInt(e.target.value) || 3 }))}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500 bg-yellow-50 p-2 rounded">
+                      ℹ️ Email-уведомления будут отправляться автоматически при приближении дедлайна. В demo-версии уведомления логируются в консоль браузера.
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowUserMenu(!showUserMenu);
+                setShowNotifications(false);
+              }}
+              className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-semibold text-xs"
+            >
+              БГ
+            </button>
+            {showUserMenu && (
+              <div className="absolute right-0 top-10 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-30">
+                <div className="px-3 py-2 border-b border-gray-200">
+                  <div className="font-semibold text-sm">{CURRENT_USER}</div>
+                  <div className="text-xs text-gray-500">
+                    Роль: {currentUserRole === 'admin' ? 'Администратор' :
+                           currentUserRole === 'manager' ? 'Менеджер' :
+                           currentUserRole === 'engineer' ? 'Инженер' :
+                           currentUserRole === 'viewer' ? 'Наблюдатель' : 'Нет прав'}
+                  </div>
+                </div>
+                {currentUserRole === 'admin' && (
+                  <Link href="/admin" className="block px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">
+                    Управление пользователями
+                  </Link>
+                )}
+                <div className="px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">Настройки</div>
+                <div className="px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">
+                  <SignOutButton />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Chips */}
+      <div className="bg-white border-b border-gray-200 px-5 py-2 flex gap-2 flex-wrap">
+        {[
+          { key: 'all' as FilterType, label: 'Все' },
+          { key: 'mine' as FilterType, label: 'Мои' },
+          { key: 'overdue' as FilterType, label: 'Просроченные' },
+          { key: 'week' as FilterType, label: 'На этой неделе' },
+          { key: 'high' as FilterType, label: 'Высокий приоритет' },
+          { key: 'blocked' as FilterType, label: 'Заблокированные' },
+          { key: 'done' as FilterType, label: 'Выполненные' }
+        ].map(f => (
+          <button
+            key={f.key}
+            onClick={() => setActiveFilter(f.key)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border ${
+              activeFilter === f.key
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="p-5 overflow-x-auto">
+        <table className="w-full bg-white border border-gray-200 rounded-lg overflow-hidden min-w-[1100px]">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="w-6"></th>
+              {columnOrder.map((colId, index) => {
+                if (!isColumnVisible(colId)) return null;
+                const isSortable = ['priority', 'name', 'receivedAt', 'deadline', 'completedAt', 'customer', 'status', 'responsible'].includes(colId);
+                return (
+                  <th
+                    key={colId}
+                    className="px-3 py-2 text-left text-[11px] text-gray-500 font-semibold group select-none"
+                    style={{
+                      width: `${columnWidths[colId] || 150}px`,
+                      minWidth: `${columnWidths[colId] || 150}px`,
+                      maxWidth: `${columnWidths[colId] || 150}px`,
+                      position: 'relative'
+                    }}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', index.toString());
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                      moveColumn(fromIndex, index);
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span className="opacity-0 group-hover:opacity-100 text-gray-400 cursor-move">⋮⋮</span>
+                      {isSortable ? (
+                        <button
+                          onClick={() => handleSort(colId)}
+                          className="flex items-center gap-1 hover:text-gray-700"
+                        >
+                          {getColumnLabel(colId)}
+                          {sortField === colId && (
+                            <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </button>
+                      ) : (
+                        <span>{getColumnLabel(colId)}</span>
+                      )}
+                    </div>
+                    <div
+                      onMouseDown={(e) => handleColumnResize(colId, e)}
+                      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 bg-transparent"
+                      style={{ zIndex: 10 }}
+                      title="Изменить ширину"
+                    ></div>
+                  </th>
+                );
+              })}
+              <th className="w-16"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredProjects.length === 0 ? (
+              <tr>
+                <td colSpan={Object.values(visibleColumns).filter(Boolean).length + 2} className="px-3 py-10 text-center text-sm text-gray-500">
+                  Ничего не найдено по текущим фильтрам
+                </td>
+              </tr>
+            ) : (
+              filteredProjects.map(project => (
+                <>
+                  {/* Project Row */}
+                  <tr key={project.id} className="border-b border-gray-200 hover:bg-gray-50">
+                    <td></td>
+                    {columnOrder.map(colId => {
+                      if (!isColumnVisible(colId)) return null;
+
+                      // Built-in columns
+                      if (colId === 'priority') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <div className="flex items-center gap-1">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityDotColor(project.priority)}`}></span>
+                              <select
+                                value={project.priority}
+                                onChange={(e) => updateProject(project.id, 'priority', e.target.value as Priority)}
+                                className={`border-none bg-transparent text-xs font-semibold outline-none cursor-pointer ${getPriorityTextColor(project.priority)}`}
+                              >
+                                {Object.entries(PRIORITY_LABELS).map(([k, v]) => (
+                                  <option key={k} value={k}>{v}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'name') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <div
+                              onClick={() => toggleExpand(project.id)}
+                              className="flex items-center gap-1 cursor-pointer font-medium text-sm"
+                            >
+                              <span className={`text-[11px] text-gray-500 transition-transform inline-block ${project.expanded ? 'rotate-90' : ''}`}>
+                                ▶
+                              </span>
+                              <span>{project.name}</span>
+                            </div>
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'receivedAt') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <input
+                              type="date"
+                              value={project.receivedAt}
+                              onChange={(e) => updateProject(project.id, 'receivedAt', e.target.value)}
+                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 outline-none w-full"
+                            />
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'deadline') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <div className={`rounded-md px-2 py-1 ${deadlineClass(project.deadline)}`}>
+                              <input
+                                type="date"
+                                value={project.deadline}
+                                onChange={(e) => updateProject(project.id, 'deadline', e.target.value)}
+                                className={`text-sm font-semibold border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full ${
+                                  deadlineClass(project.deadline) === 'bg-red-50' ? 'text-red-600' :
+                                  deadlineClass(project.deadline) === 'bg-yellow-50' ? 'text-yellow-700' :
+                                  'text-gray-900'
+                                }`}
+                              />
+                            </div>
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'completedAt') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <input
+                              type="date"
+                              value={project.completedAt || ''}
+                              onChange={(e) => updateProject(project.id, 'completedAt', e.target.value || undefined)}
+                              disabled={!canEditProject(project)}
+                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 outline-none w-full disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'customer') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={project.customer}
+                              onChange={(e) => updateProject(project.id, 'customer', e.target.value)}
+                              placeholder="—"
+                              disabled={!canEditProject(project)}
+                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'pss') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={project.pss}
+                              onChange={(e) => updateProject(project.id, 'pss', e.target.value)}
+                              placeholder="—"
+                              disabled={!canEditProject(project)}
+                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'reg') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={project.reg}
+                              onChange={(e) => updateProject(project.id, 'reg', e.target.value)}
+                              placeholder="—"
+                              disabled={!canEditProject(project)}
+                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'status') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <select
+                              value={project.status}
+                              onChange={(e) => updateProject(project.id, 'status', e.target.value)}
+                              disabled={!canEditProject(project)}
+                              className={`text-xs font-semibold px-2 py-1 rounded-xl border-none cursor-pointer outline-none disabled:cursor-not-allowed disabled:opacity-60 ${getStatusColor(project.status)}`}
+                            >
+                              {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                                <option key={k} value={k}>{v}</option>
+                              ))}
+                            </select>
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'responsible') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <input
+                              type="text"
+                              list={`users-${project.id}-resp`}
+                              value={project.responsible}
+                              onChange={(e) => updateProject(project.id, 'responsible', e.target.value)}
+                              placeholder="Выберите или впишите"
+                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
+                            />
+                            <datalist id={`users-${project.id}-resp`}>
+                              {USERS.map(u => <option key={u} value={u} />)}
+                            </datalist>
+                          </td>
+                        );
+                      }
+
+                      if (colId === 'engineer') {
+                        return (
+                          <td key={colId} className="px-3 py-2">
+                            <input
+                              type="text"
+                              list={`users-${project.id}-eng`}
+                              value={project.engineer}
+                              onChange={(e) => updateProject(project.id, 'engineer', e.target.value)}
+                              placeholder="Выберите или впишите"
+                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
+                            />
+                            <datalist id={`users-${project.id}-eng`}>
+                              {USERS.map(u => <option key={u} value={u} />)}
+                            </datalist>
+                          </td>
+                        );
+                      }
+
+                      // Custom columns
+                      return (
+                        <td key={colId} className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={project.customFields?.[colId] || ''}
+                            onChange={(e) => updateCustomField(project.id, colId, e.target.value)}
+                            placeholder="—"
+                            className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500 mr-2">
+                          {(() => {
+                            const completedTasks = project.tasks.filter(t => t.status === 'done').length;
+                            const totalTasks = project.tasks.length;
+                            const percentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                            return `${percentage}%`;
+                          })()}
+                        </span>
+                        <button
+                          onClick={() => openProjectComments(project.id)}
+                          className="text-gray-600 hover:text-gray-800 text-sm px-1"
+                          title="Комментарии"
+                        >
+                          💬
+                        </button>
+                        <button
+                          onClick={() => setShowProjectAttachments(project.id)}
+                          className="text-gray-600 hover:text-gray-800 text-sm px-1"
+                          title="Вложения"
+                        >
+                          📎
+                        </button>
+                        <button
+                          onClick={() => setShowProjectHistory(project.id)}
+                          className="text-gray-600 hover:text-gray-800 text-sm px-1"
+                          title="История изменений"
+                        >
+                          📜
+                        </button>
+                        {canEditProject(project) && (
+                          <button
+                            onClick={() => openEditModal(project)}
+                            className="text-blue-600 hover:text-blue-800 text-sm px-1"
+                            title="Редактировать"
+                          >
+                            ✎
+                          </button>
+                        )}
+                        {permissions.canDelete && (
+                          <button
+                            onClick={() => deleteProject(project.id)}
+                            className="text-red-600 hover:text-red-800 text-sm px-1"
+                            title="Удалить"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Task Rows */}
+                  {project.expanded && project.tasks.map(task => (
+                    <tr key={task.id} className="bg-gray-50 border-b border-gray-200">
+                      <td></td>
+                      {columnOrder.map(colId => {
+                        if (!isColumnVisible(colId)) return null;
+
+                        if (colId === 'priority') {
+                          return <td key={colId}></td>;
+                        }
+
+                        if (colId === 'name') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <div className="flex items-center gap-2 pl-5 text-sm text-gray-700">
+                                <span
+                                  onClick={() => toggleTaskDone(project.id, task.id)}
+                                  className={`w-3.5 h-3.5 border-2 rounded flex-shrink-0 cursor-pointer ${
+                                    task.status === 'done' ? 'bg-green-600 border-green-600' : 'border-gray-300'
+                                  }`}
+                                ></span>
+                                <span className={task.status === 'done' ? 'line-through text-gray-400' : ''}>
+                                  {task.title}
+                                </span>
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        if (colId === 'receivedAt') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <input
+                                type="date"
+                                value={task.receivedAt}
+                                onChange={(e) => updateTask(project.id, task.id, 'receivedAt', e.target.value)}
+                                className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 outline-none w-full"
+                              />
+                            </td>
+                          );
+                        }
+
+                        if (colId === 'deadline') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <div className={`rounded-md px-2 py-1 ${deadlineClass(task.deadline)}`}>
+                                <input
+                                  type="date"
+                                  value={task.deadline}
+                                  onChange={(e) => updateTask(project.id, task.id, 'deadline', e.target.value)}
+                                  className="text-sm border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full"
+                                />
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        if (colId === 'completedAt') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <input
+                                type="date"
+                                value={task.completedAt || ''}
+                                onChange={(e) => updateTask(project.id, task.id, 'completedAt', e.target.value || undefined)}
+                                className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 outline-none w-full"
+                              />
+                            </td>
+                          );
+                        }
+
+                        if (colId === 'status') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <select
+                                value={task.status}
+                                onChange={(e) => updateTask(project.id, task.id, 'status', e.target.value)}
+                                className="text-xs px-2 py-1 rounded border border-gray-300 cursor-pointer outline-none w-full"
+                              >
+                                {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => (
+                                  <option key={k} value={k}>{v}</option>
+                                ))}
+                              </select>
+                            </td>
+                          );
+                        }
+
+                        if (colId === 'responsible') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <input
+                                type="text"
+                                list={`users-${project.id}-${task.id}-resp`}
+                                value={task.responsible || ''}
+                                onChange={(e) => updateTask(project.id, task.id, 'responsible', e.target.value)}
+                                placeholder="—"
+                                className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
+                              />
+                              <datalist id={`users-${project.id}-${task.id}-resp`}>
+                                {USERS.map(u => <option key={u} value={u} />)}
+                              </datalist>
+                            </td>
+                          );
+                        }
+
+                        if (colId === 'engineer') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <input
+                                type="text"
+                                list={`users-${project.id}-${task.id}-eng`}
+                                value={task.engineer || ''}
+                                onChange={(e) => updateTask(project.id, task.id, 'engineer', e.target.value)}
+                                placeholder="—"
+                                className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
+                              />
+                              <datalist id={`users-${project.id}-${task.id}-eng`}>
+                                {USERS.map(u => <option key={u} value={u} />)}
+                              </datalist>
+                            </td>
+                          );
+                        }
+
+                        // Other built-in columns (customer, pss, reg) - empty for tasks
+                        // Custom columns for tasks - show comments field
+                        if (customColumns.find(c => c.id === colId)) {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={task.customFields?.[colId] || ''}
+                                onChange={(e) => updateTaskCustomField(project.id, task.id, colId, e.target.value)}
+                                placeholder="Комментарии..."
+                                className="text-sm border border-gray-300 bg-white rounded px-2 py-1 hover:border-gray-400 focus:border-blue-600 outline-none w-full"
+                              />
+                            </td>
+                          );
+                        }
+
+                        return <td key={colId} className="px-3 py-2"></td>;
+                      })}
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setShowTaskComments({ projectId: project.id, taskId: task.id })}
+                            className="text-gray-600 hover:text-gray-800 text-sm px-1"
+                            title="Комментарии"
+                          >
+                            💬
+                          </button>
+                          <button
+                            onClick={() => setEditingTask({ projectId: project.id, task })}
+                            className="text-blue-600 hover:text-blue-800 text-sm px-1"
+                            title="Редактировать"
+                          >
+                            ✎
+                          </button>
+                          <button
+                            onClick={() => deleteTask(project.id, task.id)}
+                            className="text-red-600 hover:text-red-800 text-sm px-1"
+                            title="Удалить"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Add Task Row */}
+                  {project.expanded && (
+                    <tr className="bg-blue-50 border-b border-gray-200">
+                      <td></td>
+                      {columnOrder.map(colId => {
+                        if (!isColumnVisible(colId)) return null;
+                        if (colId === 'name') {
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <button
+                                onClick={() => addTask(project.id)}
+                                className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                              >
+                                + Добавить задачу
+                              </button>
+                            </td>
+                          );
+                        }
+                        return <td key={colId}></td>;
+                      })}
+                      <td></td>
+                    </tr>
+                  )}
+                </>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Create Project Modal */}
+      {showModal && (
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
+          onClick={() => {
+            setShowModal(false);
+            setEditingProject(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold mb-4">{editingProject ? 'Редактировать проект' : 'Новый проект'}</h2>
+            <div className="mb-3">
+              <label className="block text-xs text-gray-700 font-medium mb-1">Название проекта</label>
+              <input id="f_name" defaultValue={editingProject?.name || ''} placeholder="Например: ЖК Северный" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Дата поступления</label>
+                <input id="f_received" type="date" defaultValue={editingProject?.receivedAt || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Дедлайн</label>
+                <input id="f_deadline" type="date" defaultValue={editingProject?.deadline || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs text-gray-700 font-medium mb-1">Заказчик</label>
+              <input id="f_customer" defaultValue={editingProject?.customer || ''} placeholder="Название заказчика" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">PSS</label>
+                <input id="f_pss" defaultValue={editingProject?.pss || ''} placeholder="PSS-000" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Номер регистрации</label>
+                <input id="f_reg" defaultValue={editingProject?.reg || ''} placeholder="Р-000" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Приоритет</label>
+                <select id="f_priority" defaultValue={editingProject?.priority || 'high'} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  <option value="critical">Критический</option>
+                  <option value="high">Высокий</option>
+                  <option value="medium">Средний</option>
+                  <option value="low">Низкий</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Статус</label>
+                <select id="f_status" defaultValue={editingProject?.status || 'new'} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  <option value="new">Новый</option>
+                  <option value="progress">В работе</option>
+                  <option value="waiting">Ожидание</option>
+                  <option value="blocked">Заблокирован</option>
+                  <option value="done">Завершён</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
+                <input id="f_responsible" defaultValue={editingProject?.responsible || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Инженер</label>
+                <input id="f_engineer" defaultValue={editingProject?.engineer || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingProject(null);
+                }}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={createProject}
+                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+              >
+                {editingProject ? 'Сохранить' : 'Создать проект'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Task Modal */}
+      {editingTask && (
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
+          onClick={() => setEditingTask(null)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold mb-4">Редактировать подзадачу</h2>
+            <div className="mb-3">
+              <label className="block text-xs text-gray-700 font-medium mb-1">Название подзадачи</label>
+              <input id="t_title" defaultValue={editingTask.task.title} placeholder="Название" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Дата поступления</label>
+                <input id="t_received" type="date" defaultValue={editingTask.task.receivedAt} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Дедлайн</label>
+                <input id="t_deadline" type="date" defaultValue={editingTask.task.deadline} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              </div>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs text-gray-700 font-medium mb-1">Статус</label>
+              <select id="t_status" defaultValue={editingTask.task.status} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
+                <input id="t_responsible" list="t_users_resp" defaultValue={editingTask.task.responsible || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+                <datalist id="t_users_resp">
+                  {USERS.map(u => <option key={u} value={u} />)}
+                </datalist>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Инженер</label>
+                <input id="t_engineer" list="t_users_eng" defaultValue={editingTask.task.engineer || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+                <datalist id="t_users_eng">
+                  {USERS.map(u => <option key={u} value={u} />)}
+                </datalist>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setEditingTask(null)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => {
+                  const title = (document.getElementById('t_title') as HTMLInputElement).value;
+                  const receivedAt = (document.getElementById('t_received') as HTMLInputElement).value;
+                  const deadline = (document.getElementById('t_deadline') as HTMLInputElement).value;
+                  const status = (document.getElementById('t_status') as HTMLSelectElement).value;
+                  const responsible = (document.getElementById('t_responsible') as HTMLInputElement).value;
+                  const engineer = (document.getElementById('t_engineer') as HTMLInputElement).value;
+
+                  setProjects(projects.map(p => {
+                    if (p.id === editingTask.projectId) {
+                      return {
+                        ...p,
+                        tasks: p.tasks.map(t =>
+                          t.id === editingTask.task.id
+                            ? { ...t, title, receivedAt, deadline, status, responsible, engineer }
+                            : t
+                        )
+                      };
+                    }
+                    return p;
+                  }));
+                  setEditingTask(null);
+                }}
+                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Comments Modal */}
+      {showProjectComments && (
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
+          onClick={() => setShowProjectComments(null)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold mb-4">Комментарии к проекту</h2>
+            <div className="mb-4">
+              {(() => {
+                const project = projects.find(p => p.id === showProjectComments);
+                if (!project || !project.comments || project.comments.length === 0) {
+                  return <p className="text-sm text-gray-500">Комментариев пока нет</p>;
+                }
+                return (
+                  <div className="space-y-3">
+                    {project.comments.map((comment, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-semibold text-gray-700">{comment.author}</span>
+                          <span className="text-xs text-gray-400">{new Date(comment.date).toLocaleDateString('ru-RU')}</span>
+                          <button
+                            onClick={() => {
+                              setProjects(projects.map(p => {
+                                if (p.id === showProjectComments) {
+                                  return {
+                                    ...p,
+                                    comments: p.comments?.filter((_, i) => i !== idx) || []
+                                  };
+                                }
+                                return p;
+                              }));
+                            }}
+                            className="ml-auto text-red-600 hover:text-red-800 text-xs"
+                            title="Удалить комментарий"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <p className="text-sm text-gray-800">{comment.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs text-gray-700 font-medium mb-1">Добавить комментарий</label>
+              <textarea
+                id="new_project_comment"
+                placeholder="Введите текст комментария..."
+                className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600 resize-none"
+                rows={3}
+              ></textarea>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowProjectComments(null)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+              >
+                Закрыть
+              </button>
+              <button
+                onClick={() => {
+                  const text = (document.getElementById('new_project_comment') as HTMLTextAreaElement).value.trim();
+                  if (!text) return;
+
+                  setProjects(projects.map(p => {
+                    if (p.id === showProjectComments) {
+                      return {
+                        ...p,
+                        comments: [
+                          ...(p.comments || []),
+                          {
+                            author: 'Вы',
+                            date: new Date().toISOString(),
+                            text
+                          }
+                        ]
+                      };
+                    }
+                    return p;
+                  }));
+                  (document.getElementById('new_project_comment') as HTMLTextAreaElement).value = '';
+                }}
+                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+              >
+                Добавить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Comments Modal */}
+      {showTaskComments && (
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
+          onClick={() => setShowTaskComments(null)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold mb-4">Комментарии</h2>
+            <div className="mb-4">
+              {(() => {
+                const project = projects.find(p => p.id === showTaskComments.projectId);
+                const task = project?.tasks.find(t => t.id === showTaskComments.taskId);
+                if (!task || !task.comments || task.comments.length === 0) {
+                  return <p className="text-sm text-gray-500">Комментариев пока нет</p>;
+                }
+                return (
+                  <div className="space-y-3">
+                    {task.comments.map((comment, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-semibold text-gray-700">{comment.author}</span>
+                          <span className="text-xs text-gray-400">{new Date(comment.date).toLocaleDateString('ru-RU')}</span>
+                          <button
+                            onClick={() => {
+                              setProjects(projects.map(p => {
+                                if (p.id === showTaskComments.projectId) {
+                                  return {
+                                    ...p,
+                                    tasks: p.tasks.map(t =>
+                                      t.id === showTaskComments.taskId
+                                        ? {
+                                            ...t,
+                                            comments: t.comments?.filter((_, i) => i !== idx) || []
+                                          }
+                                        : t
+                                    )
+                                  };
+                                }
+                                return p;
+                              }));
+                            }}
+                            className="ml-auto text-red-600 hover:text-red-800 text-xs"
+                            title="Удалить комментарий"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <p className="text-sm text-gray-800">{comment.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs text-gray-700 font-medium mb-1">Добавить комментарий</label>
+              <textarea
+                id="new_comment"
+                placeholder="Введите текст комментария..."
+                className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600 resize-none"
+                rows={3}
+              ></textarea>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowTaskComments(null)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+              >
+                Закрыть
+              </button>
+              <button
+                onClick={() => {
+                  const text = (document.getElementById('new_comment') as HTMLTextAreaElement).value.trim();
+                  if (!text) return;
+
+                  setProjects(projects.map(p => {
+                    if (p.id === showTaskComments.projectId) {
+                      return {
+                        ...p,
+                        tasks: p.tasks.map(t =>
+                          t.id === showTaskComments.taskId
+                            ? {
+                                ...t,
+                                comments: [
+                                  ...(t.comments || []),
+                                  {
+                                    author: 'Вы',
+                                    date: new Date().toISOString(),
+                                    text
+                                  }
+                                ]
+                              }
+                            : t
+                        )
+                      };
+                    }
+                    return p;
+                  }));
+                  (document.getElementById('new_comment') as HTMLTextAreaElement).value = '';
+                }}
+                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+              >
+                Добавить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project History Modal */}
+      {showProjectHistory && (
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
+          onClick={() => setShowProjectHistory(null)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold mb-4">История изменений</h2>
+            <div className="space-y-3">
+              {(() => {
+                const project = projects.find(p => p.id === showProjectHistory);
+                if (!project || !project.history || project.history.length === 0) {
+                  return <p className="text-sm text-gray-500">История изменений пуста</p>;
+                }
+                return project.history.slice().reverse().map((entry, idx) => (
+                  <div key={idx} className="border-l-2 border-blue-500 pl-3 pb-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold text-gray-700">{entry.user}</span>
+                      <span className="text-xs text-gray-400">
+                        {new Date(entry.date).toLocaleDateString('ru-RU', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                    <div className="text-sm font-medium text-gray-800">{entry.action}</div>
+                    {entry.details && (
+                      <div className="text-xs text-gray-600 mt-1">{entry.details}</div>
+                    )}
+                  </div>
+                ));
+              })()}
+            </div>
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setShowProjectHistory(null)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Attachments Modal */}
+      {showProjectAttachments && (
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
+          onClick={() => setShowProjectAttachments(null)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold mb-4">Вложения</h2>
+            <div className="mb-4">
+              {(() => {
+                const project = projects.find(p => p.id === showProjectAttachments);
+                if (!project || !project.attachments || project.attachments.length === 0) {
+                  return <p className="text-sm text-gray-500">Файлов пока нет</p>;
+                }
+                return (
+                  <div className="space-y-2">
+                    {project.attachments.map((attachment) => (
+                      <div key={attachment.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-800">{attachment.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {formatFileSize(attachment.size)} • {new Date(attachment.uploadedAt).toLocaleDateString('ru-RU')}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => downloadAttachment(attachment)}
+                            className="text-blue-600 hover:text-blue-800 text-sm px-2 py-1"
+                            title="Скачать"
+                          >
+                            ⬇
+                          </button>
+                          <button
+                            onClick={() => deleteAttachment(showProjectAttachments, attachment.id)}
+                            className="text-red-600 hover:text-red-800 text-sm px-2 py-1"
+                            title="Удалить"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs text-gray-700 font-medium mb-2">Добавить файлы</label>
+              <input
+                type="file"
+                multiple
+                onChange={(e) => {
+                  handleFileUpload(showProjectAttachments, e);
+                  e.target.value = '';
+                }}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              <p className="text-xs text-gray-500 mt-1">Максимальный размер файла: 10 МБ</p>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowProjectAttachments(null)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,22 @@
+
+> project-tracker@0.1.0 build
+> next build
+
+  ▲ Next.js 14.2.5
+  - Environments: .env
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/app/api/notifications/deadline-reminders/route.ts:34:9
+Type error: Object literal may only specify known properties, and 'owner' does not exist in type 'ProjectInclude<DefaultArgs>'.
+
+[0m [90m 32 |[39m       }[33m,[39m[0m
+[0m [90m 33 |[39m       include[33m:[39m {[0m
+[0m[31m[1m>[22m[39m[90m 34 |[39m         owner[33m:[39m {[0m
+[0m [90m    |[39m         [31m[1m^[22m[39m[0m
+[0m [90m 35 |[39m           select[33m:[39m {[0m
+[0m [90m 36 |[39m             id[33m:[39m [36mtrue[39m[33m,[39m[0m
+[0m [90m 37 |[39m             name[33m:[39m [36mtrue[39m[33m,[39m[0m

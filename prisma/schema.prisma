@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  name         String
+  size         Int
+  mimeType     String?
+  url          String
+  cloudinaryId String
+  uploadedAt   String
+  uploadedBy   String?
+  projectId    Int
+  createdAt    DateTime @default(now())
+  Project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([cloudinaryId])
+  @@index([projectId])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  author    String
+  text      String
+  date      String
+  projectId Int?
+  taskId    Int?
+  userId    String?
+  createdAt DateTime @default(now())
+  Project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  Task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  User      User?    @relation(fields: [userId], references: [id])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  role      String
+  token     String   @unique
+  status    String   @default("pending")
+  projectId Int?
+  invitedBy String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [invitedBy], references: [id])
+
+  @@index([email])
+  @@index([projectId])
+  @@index([token])
+}
+
+model Project {
+  id             Int              @id @default(autoincrement())
+  name           String
+  receivedAt     String
+  deadline       String
+  completedAt    String?
+  customer       String
+  pss            String
+  reg            String
+  status         String
+  priority       String
+  responsible    String
+  engineer       String
+  customFields   Json?
+  ownerId        String?
+  deletedAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now()) @updatedAt
+  color          String?          @default("#3B82F6")
+  tags           String[]         @default([])
+  Attachment     Attachment[]
+  Comment        Comment[]
+  User           User?            @relation(fields: [ownerId], references: [id])
+  ProjectHistory ProjectHistory[]
+  ProjectMember  ProjectMember[]
+  Task           Task[]
+
+  @@index([deletedAt])
+  @@index([ownerId])
+}
+
+model ProjectHistory {
+  id        Int      @id @default(autoincrement())
+  date      String
+  user      String
+  action    String
+  details   String
+  projectId Int
+  userId    String?
+  createdAt DateTime @default(now())
+  Project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  User      User?    @relation(fields: [userId], references: [id])
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  role      String
+  projectId Int
+  userId    String
+  addedAt   DateTime @default(now())
+  Project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+model Task {
+  id           Int       @id @default(autoincrement())
+  title        String
+  status       String
+  receivedAt   String
+  deadline     String
+  completedAt  String?
+  responsible  String?
+  engineer     String?
+  customFields Json?
+  projectId    Int
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+  Comment      Comment[]
+  Project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([deletedAt])
+}
+
+model User {
+  id                   String              @id @default(cuid())
+  name                 String
+  email                String              @unique
+  password             String
+  avatar               String?
+  emailVerified        Boolean             @default(false)
+  isBlocked            Boolean             @default(false)
+  role                 String              @default("user")
+  status               String              @default("active")
+  plan                 String              @default("free")
+  permissions          Json                @default("{}")
+  notificationSettings Json                @default("{\"emailOnInvite\": true, \"emailOnDeadline\": true, \"emailOnProjectChange\": false}")
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @default(now())
+  Comment              Comment[]
+  Invitation           Invitation[]
+  Project              Project[]
+  ProjectHistory       ProjectHistory[]
+  ProjectMember        ProjectMember[]
+  VerificationToken    VerificationToken[]
+}
+
+model VerificationToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  type      String
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  User      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}

@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #F7F8FA;
+  color: #111827;
+}
+
+/* Компактные, единообразные поля ввода на страницах авторизации и таблицы */
+.field {
+  @apply w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink-900 outline-none transition-colors;
+  @apply focus:border-accent focus:ring-1 focus:ring-accent;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-60;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-ink-700 transition-colors hover:bg-canvas;
+}
+
+.auth-card {
+  @apply w-full max-w-sm rounded-md border border-border bg-surface p-8 shadow-sm;
+}

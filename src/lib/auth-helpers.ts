@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { prisma } from "./db";
+import { prisma } from "./prisma";
 
 const SALT_ROUNDS = 12;
 

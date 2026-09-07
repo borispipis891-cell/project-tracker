@@ -1,4 +1,4 @@
-import { prisma } from "./db";
+import { prisma } from "./prisma";
 
 export async function getUserProjectRole(userId: string, projectId: number) {
   const project = await prisma.project.findUnique({

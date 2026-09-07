@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || session.user.role !== 'admin') {
+    if (!session?.user || session.user.role !== 'admin') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 403 }
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
         token,
         role: 'viewer', // Default role for system-wide invitations
         projectId: null, // System-wide invitation, not project-specific
-        invitedBy: session.user.id,
+        invitedBy: session.user?.id ?? '',
         expiresAt,
         status: 'pending'
       }

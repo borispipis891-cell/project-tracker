@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { prisma } from "@/lib/prisma";
 import { createPasswordResetToken } from "@/lib/auth-helpers";
 
 const forgotPasswordSchema = z.object({

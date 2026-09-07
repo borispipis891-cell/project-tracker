@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
-import { prisma } from "@/lib/db";
+import { prisma } from "@/lib/prisma";
 
 const acceptSchema = z.object({
   token: z.string().min(1, "Токен обязателен"),

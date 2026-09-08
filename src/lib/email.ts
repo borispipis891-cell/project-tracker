@@ -34,15 +34,21 @@ export async function sendEmail(options: {
 
 // Email templates
 export const emailTemplates = {
-  projectInvite: (data: { projectName: string; inviteUrl: string }) => ({
+  projectInvite: (data: {
+    projectName: string;
+    inviteUrl?: string;
+    inviterName?: string;
+    role?: string;
+    projectUrl?: string;
+  }) => ({
     subject: `Приглашение в проект ${data.projectName}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Приглашение в проект</h2>
-        <p>Вас пригласили присоединиться к проекту <strong>${data.projectName}</strong>.</p>
-        <a href="${data.inviteUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">
-          Принять приглашение
-        </a>
+        ${data.inviterName ? `<p><strong>${data.inviterName}</strong> пригласил вас присоединиться к проекту <strong>${data.projectName}</strong>.</p>` : `<p>Вас пригласили присоединиться к проекту <strong>${data.projectName}</strong>.</p>`}
+        ${data.role ? `<p>Ваша роль: <strong>${data.role}</strong></p>` : ''}
+        ${data.inviteUrl ? `<a href="${data.inviteUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Принять приглашение</a>` : ''}
+        ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Открыть проект</a>` : ''}
       </div>
     `,
   }),

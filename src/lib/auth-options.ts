@@ -32,9 +32,10 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Ваш аккаунт заблокирован. Обратитесь к администратору.");
         }
 
-        if (!user.emailVerified) {
-          throw new Error("Подтвердите email перед входом. Проверьте почту.");
-        }
+        // Временно отключена проверка email до настройки SMTP
+        // if (!user.emailVerified) {
+        //   throw new Error("Подтвердите email перед входом. Проверьте почту.");
+        // }
 
         const isValid = await verifyPassword(credentials.password, user.password);
         if (!isValid) {

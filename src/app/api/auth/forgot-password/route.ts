@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const { resetUrl } = await createPasswordResetToken(user.id);
+    const { resetUrl } = await createPasswordResetToken(user.id, user.email);
 
     return NextResponse.json({
       message: "Инструкции отправлены на email.",

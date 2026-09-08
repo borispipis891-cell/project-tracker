@@ -70,8 +70,8 @@ export async function POST(request: Request) {
 
     // Create verification token
     console.log('[REGISTER] Creating verification token...');
-    const { verifyUrl } = await createEmailVerificationToken(user.id);
-    console.log('[REGISTER] Token created');
+    const { verifyUrl } = await createEmailVerificationToken(user.id, user.email);
+    console.log('[REGISTER] Token created and email sent');
 
     return NextResponse.json({
       message: isFirstUser

@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "./prisma";
+import { sendVerificationEmail, sendPasswordResetEmail } from "./email";
 
 const SALT_ROUNDS = 12;
 
@@ -21,7 +22,7 @@ const APP_URL = process.env.APP_URL || "http://localhost:3000";
 /**
  * Создаёт токен подтверждения email (TTL 24 часа)
  */
-export async function createEmailVerificationToken(userId: string) {
+export async function createEmailVerificationToken(userId: string, userEmail: string) {
   const token = generateToken();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -31,8 +32,14 @@ export async function createEmailVerificationToken(userId: string) {
 
   const verifyUrl = `${APP_URL}/verify-email?token=${token}`;
 
-  // TODO: Отправить email с ссылкой verifyUrl
-  console.log(`Email verification link: ${verifyUrl}`);
+  // Отправка email
+  try {
+    await sendVerificationEmail(userEmail, verifyUrl);
+    console.log(`[AUTH] Verification email sent to: ${userEmail}`);
+  } catch (error) {
+    console.error('[AUTH] Failed to send verification email:', error);
+    // Не бросаем ошибку, чтобы регистрация все равно прошла
+  }
 
   return { token, verifyUrl };
 }
@@ -40,7 +47,7 @@ export async function createEmailVerificationToken(userId: string) {
 /**
  * Создаёт токен сброса пароля (TTL 1 час)
  */
-export async function createPasswordResetToken(userId: string) {
+export async function createPasswordResetToken(userId: string, userEmail: string) {
   const token = generateToken();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
@@ -50,8 +57,14 @@ export async function createPasswordResetToken(userId: string) {
 
   const resetUrl = `${APP_URL}/reset-password?token=${token}`;
 
-  // TODO: Отправить email с ссылкой resetUrl
-  console.log(`Password reset link: ${resetUrl}`);
+  // Отправка email
+  try {
+    await sendPasswordResetEmail(userEmail, resetUrl);
+    console.log(`[AUTH] Password reset email sent to: ${userEmail}`);
+  } catch (error) {
+    console.error('[AUTH] Failed to send password reset email:', error);
+    throw error; // Для сброса пароля бросаем ошибку
+  }
 
   return { token, resetUrl };
 }

@@ -114,26 +114,45 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+    console.log('[CREATE_PROJECT] Received data:', JSON.stringify(body, null, 2));
+
+    // Validate required fields
+    if (!body.name) {
+      return NextResponse.json({ error: 'Название проекта обязательно' }, { status: 400 });
+    }
+    if (!body.status) {
+      return NextResponse.json({ error: 'Статус проекта обязателен' }, { status: 400 });
+    }
+    if (!body.priority) {
+      return NextResponse.json({ error: 'Приоритет проекта обязателен' }, { status: 400 });
+    }
+
+    const projectData = {
+      name: body.name,
+      receivedAt: body.receivedAt || new Date().toISOString().split('T')[0],
+      deadline: body.deadline || new Date().toISOString().split('T')[0],
+      completedAt: body.completedAt || null,
+      customer: body.customer || '',
+      pss: body.pss || '',
+      reg: body.reg || '',
+      status: body.status,
+      priority: body.priority,
+      responsible: body.responsible || '',
+      engineer: body.engineer || '',
+      customFields: body.customFields || {},
+      ownerId: currentUser.id,
+      color: body.color || '#3B82F6',
+      tags: body.tags || [],
+    };
+
+    console.log('[CREATE_PROJECT] Creating with data:', JSON.stringify(projectData, null, 2));
 
     const project = await prisma.project.create({
-      data: {
-        name: body.name,
-        receivedAt: body.receivedAt,
-        deadline: body.deadline,
-        completedAt: body.completedAt,
-        customer: body.customer,
-        pss: body.pss,
-        reg: body.reg,
-        status: body.status,
-        priority: body.priority,
-        responsible: body.responsible,
-        engineer: body.engineer,
-        customFields: body.customFields || {},
-        ownerId: currentUser.id,
-        Task: {
-          create: body.tasks || [],
-        },
-      },
+      data: projectData,
+    console.log('[CREATE_PROJECT] Creating with data:', JSON.stringify(projectData, null, 2));
+
+    const project = await prisma.project.create({
+      data: projectData,
       include: {
         User: {
           select: {
@@ -142,20 +161,14 @@ export async function POST(request: Request) {
             email: true,
           },
         },
-        Task: {
-          orderBy: { createdAt: 'desc' },
-        },
-        Comment: {
-          orderBy: { createdAt: 'desc' },
-        },
-        ProjectHistory: {
-          orderBy: { createdAt: 'desc' },
-        },
-        Attachment: {
-          orderBy: { createdAt: 'desc' },
-        },
+        Task: true,
+        Comment: true,
+        ProjectHistory: true,
+        Attachment: true,
       },
     });
+
+    console.log('[CREATE_PROJECT] Project created successfully:', project.id);
 
     // Add history entry for project creation
     await prisma.projectHistory.create({
@@ -163,6 +176,7 @@ export async function POST(request: Request) {
         projectId: project.id,
         date: new Date().toISOString(),
         user: currentUser.name || currentUser.email,
+        userId: currentUser.id,
         action: 'Создан проект',
         details: `"${body.name}"`,
       },

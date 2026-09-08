@@ -10,6 +10,47 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Общая функция отправки email
+export async function sendEmail(options: {
+  to: string;
+  subject: string;
+  html: string;
+}) {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('[EMAIL] Email sent to:', options.to);
+  } catch (error) {
+    console.error('[EMAIL] Failed to send email:', error);
+    throw error;
+  }
+}
+
+// Email templates
+export const emailTemplates = {
+  projectInvite: (projectName: string, inviteUrl: string) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2>Приглашение в проект</h2>
+      <p>Вас пригласили присоединиться к проекту <strong>${projectName}</strong>.</p>
+      <a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">
+        Принять приглашение
+      </a>
+    </div>
+  `,
+  deadlineReminder: (taskTitle: string, deadline: string) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2>Напоминание о дедлайне</h2>
+      <p>Задача <strong>${taskTitle}</strong> должна быть выполнена до <strong>${deadline}</strong>.</p>
+    </div>
+  `,
+};
+
 export async function sendVerificationEmail(email: string, verifyUrl: string) {
   const mailOptions = {
     from: process.env.EMAIL_FROM || process.env.SMTP_USER,

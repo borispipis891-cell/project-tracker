@@ -149,10 +149,6 @@ export async function POST(request: Request) {
 
     const project = await prisma.project.create({
       data: projectData,
-    console.log('[CREATE_PROJECT] Creating with data:', JSON.stringify(projectData, null, 2));
-
-    const project = await prisma.project.create({
-      data: projectData,
       include: {
         User: {
           select: {

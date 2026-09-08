@@ -61,13 +61,13 @@ model Project {
   receivedAt     String
   deadline       String
   completedAt    String?
-  customer       String
-  pss            String
-  reg            String
+  customer       String           @default("")
+  pss            String           @default("")
+  reg            String           @default("")
   status         String
   priority       String
-  responsible    String
-  engineer       String
+  responsible    String           @default("")
+  engineer       String           @default("")
   customFields   Json?
   ownerId        String?
   deletedAt      DateTime?

@@ -34,21 +34,29 @@ export async function sendEmail(options: {
 
 // Email templates
 export const emailTemplates = {
-  projectInvite: (projectName: string, inviteUrl: string) => `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Приглашение в проект</h2>
-      <p>Вас пригласили присоединиться к проекту <strong>${projectName}</strong>.</p>
-      <a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">
-        Принять приглашение
-      </a>
-    </div>
-  `,
-  deadlineReminder: (taskTitle: string, deadline: string) => `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Напоминание о дедлайне</h2>
-      <p>Задача <strong>${taskTitle}</strong> должна быть выполнена до <strong>${deadline}</strong>.</p>
-    </div>
-  `,
+  projectInvite: (data: { projectName: string; inviteUrl: string }) => ({
+    subject: `Приглашение в проект ${data.projectName}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Приглашение в проект</h2>
+        <p>Вас пригласили присоединиться к проекту <strong>${data.projectName}</strong>.</p>
+        <a href="${data.inviteUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">
+          Принять приглашение
+        </a>
+      </div>
+    `,
+  }),
+  deadlineReminder: (data: { projectName: string; deadline: string; daysLeft?: number; projectUrl?: string }) => ({
+    subject: `Напоминание о дедлайне - ${data.projectName}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Напоминание о дедлайне</h2>
+        <p>Проект <strong>${data.projectName}</strong> должен быть завершен до <strong>${data.deadline}</strong>.</p>
+        ${data.daysLeft ? `<p>Осталось дней: <strong>${data.daysLeft}</strong></p>` : ''}
+        ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Открыть проект</a>` : ''}
+      </div>
+    `,
+  }),
 };
 
 export async function sendVerificationEmail(email: string, verifyUrl: string) {

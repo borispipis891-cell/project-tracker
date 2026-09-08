@@ -63,6 +63,19 @@ export const emailTemplates = {
       </div>
     `,
   }),
+  projectUpdate: (data: { projectName: string; changes: string; updatedBy: string; projectUrl?: string }) => ({
+    subject: `Обновление проекта - ${data.projectName}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Проект обновлен</h2>
+        <p><strong>${data.updatedBy}</strong> внес изменения в проект <strong>${data.projectName}</strong>.</p>
+        <div style="background-color: #f3f4f6; padding: 12px; border-radius: 6px; margin: 16px 0;">
+          ${data.changes}
+        </div>
+        ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Открыть проект</a>` : ''}
+      </div>
+    `,
+  }),
 };
 
 export async function sendVerificationEmail(email: string, verifyUrl: string) {

@@ -157,8 +157,12 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
+    console.error('Error details:', error instanceof Error ? error.message : String(error));
+    if (error instanceof Error && 'stack' in error) {
+      console.error('Stack trace:', error.stack);
+    }
     return NextResponse.json(
-      { error: 'Failed to fetch stats' },
+      { error: 'Failed to fetch stats', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

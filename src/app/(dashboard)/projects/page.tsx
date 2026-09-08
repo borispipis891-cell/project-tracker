@@ -1646,9 +1646,6 @@ export default function ProjectsPage() {
                         className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
                       />
                     </div>
-                    <div className="text-xs text-gray-500 bg-yellow-50 p-2 rounded">
-                      ℹ️ Email-уведомления будут отправляться автоматически при приближении дедлайна. В demo-версии уведомления логируются в консоль браузера.
-                    </div>
                   </>
                 )}
               </div>

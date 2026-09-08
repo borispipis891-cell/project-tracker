@@ -182,8 +182,12 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('Error creating project:', error);
+    console.error('Error details:', error instanceof Error ? error.message : String(error));
+    if (error instanceof Error && 'stack' in error) {
+      console.error('Stack trace:', error.stack);
+    }
     return NextResponse.json(
-      { error: 'Failed to create project' },
+      { error: 'Failed to create project', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

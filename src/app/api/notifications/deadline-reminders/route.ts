@@ -81,18 +81,24 @@ export async function POST(request: Request) {
             projectUrl: `${process.env.APP_URL}/projects?project=${project.id}`,
           });
 
-          const result = await sendEmail({
-            to: recipient.email,
-            subject: emailData.subject,
-            html: emailData.html,
-          });
+          let sent = false;
+          try {
+            await sendEmail({
+              to: recipient.email,
+              subject: emailData.subject,
+              html: emailData.html,
+            });
+            sent = true;
+          } catch (error) {
+            console.error('Failed to send email to', recipient.email, error);
+          }
 
           notifications.push({
             projectId: project.id,
             projectName: project.name,
             recipient: recipient.email,
             daysLeft,
-            sent: result.success,
+            sent,
           });
         }
       }

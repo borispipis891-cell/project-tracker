@@ -19,50 +19,43 @@ export async function POST(
     const body = await request.json();
     const projectId = parseInt(params.id);
 
-    // Один запрос для получения всего необходимого
+    // Упрощённая проверка: только ID пользователя и владельца проекта
     const t1 = Date.now();
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        id: true,
-        ownerId: true,
-        ProjectMember: {
-          select: { role: true, userId: true },
-        },
-        User: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-    });
-    console.log(`[Task Create] Fetch project: ${Date.now() - t1}ms`);
+    const [currentUser, project] = await Promise.all([
+      prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true, name: true, email: true },
+      }),
+      prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, ownerId: true },
+      }),
+    ]);
+    console.log(`[Task Create] Auth check: ${Date.now() - t1}ms`);
 
-    if (!project) {
-      return NextResponse.json({ error: 'Проект не найден' }, { status: 404 });
+    if (!currentUser || !project) {
+      return NextResponse.json({ error: 'Не найдено' }, { status: 404 });
     }
 
-    // Получаем текущего пользователя
-    const t2 = Date.now();
-    const currentUser = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true, name: true, email: true },
-    });
-    console.log(`[Task Create] Find user: ${Date.now() - t2}ms`);
+    // Простая проверка: только владелец может создавать задачи
+    // Если нужны права для участников команды, раскомментируйте проверку ниже
+    if (project.ownerId !== currentUser.id) {
+      // Дополнительная проверка участника команды (медленно)
+      const member = await prisma.projectMember.findFirst({
+        where: {
+          projectId,
+          userId: currentUser.id,
+          role: 'editor',
+        },
+      });
 
-    if (!currentUser) {
-      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
-    }
-
-    // Проверяем права локально
-    const isOwner = project.ownerId === currentUser.id;
-    const memberRole = project.ProjectMember.find(m => m.userId === currentUser.id)?.role;
-    const canEdit = isOwner || memberRole === 'editor';
-
-    if (!canEdit) {
-      return NextResponse.json({ error: 'Доступ запрещён' }, { status: 403 });
+      if (!member) {
+        return NextResponse.json({ error: 'Доступ запрещён' }, { status: 403 });
+      }
     }
 
     // Создаём задачу и историю параллельно
-    const t3 = Date.now();
+    const t2 = Date.now();
     const [task] = await Promise.all([
       prisma.task.create({
         data: {
@@ -90,7 +83,7 @@ export async function POST(
         },
       }),
     ]);
-    console.log(`[Task Create] Parallel create: ${Date.now() - t3}ms`);
+    console.log(`[Task Create] DB write: ${Date.now() - t2}ms`);
     console.log(`[Task Create] Total: ${Date.now() - startTime}ms`);
 
     return NextResponse.json(task);

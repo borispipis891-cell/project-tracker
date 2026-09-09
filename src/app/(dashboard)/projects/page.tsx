@@ -898,7 +898,6 @@ export default function ProjectsPage() {
           } : p
         ));
       }
-      }
     } catch (error) {
       console.error('Failed to toggle task:', error);
     }

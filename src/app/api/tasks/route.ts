@@ -8,9 +8,12 @@ export async function POST(request: Request) {
     const task = await prisma.task.create({
       data: {
         title: body.title,
+        description: body.description || '',
         status: body.status,
+        priority: body.priority || 'medium',
         receivedAt: body.receivedAt,
         deadline: body.deadline,
+        dueDate: body.dueDate || body.deadline || '',
         completedAt: body.completedAt,
         responsible: body.responsible,
         engineer: body.engineer,

@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Attachment {
-  id           String   @id
+  id           String   @id @default(cuid())
   name         String
   size         Int
   mimeType     String?
@@ -39,7 +39,7 @@ model Comment {
 }
 
 model Invitation {
-  id        String   @id
+  id        String   @id @default(cuid())
   email     String
   role      String
   token     String   @unique
@@ -100,7 +100,7 @@ model ProjectHistory {
 }
 
 model ProjectMember {
-  id        String   @id
+  id        String   @id @default(cuid())
   role      String
   projectId Int
   userId    String
@@ -137,7 +137,7 @@ model Task {
 }
 
 model User {
-  id                   String              @id
+  id                   String              @id @default(cuid())
   name                 String
   email                String              @unique
   password             String
@@ -160,7 +160,7 @@ model User {
 }
 
 model VerificationToken {
-  id        String    @id
+  id        String    @id @default(cuid())
   token     String    @unique
   type      String
   userId    String

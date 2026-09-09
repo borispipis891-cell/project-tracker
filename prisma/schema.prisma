@@ -118,6 +118,7 @@ model Task {
   title        String
   description  String    @default("")
   status       String
+  priority     String    @default("medium")
   receivedAt   String
   deadline     String
   completedAt  String?

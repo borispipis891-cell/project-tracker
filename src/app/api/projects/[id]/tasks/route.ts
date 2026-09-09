@@ -39,6 +39,7 @@ export async function POST(
         title: body.title,
         description: body.description || '',
         status: body.status || 'not_started',
+        priority: body.priority || 'medium',
         receivedAt: body.receivedAt || '',
         deadline: body.deadline || '',
         completedAt: body.completedAt,

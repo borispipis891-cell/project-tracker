@@ -21,6 +21,7 @@ const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
 /**
  * Создаёт токен подтверждения email (TTL 24 часа)
+ * @deprecated Используйте создание токена в транзакции напрямую
  */
 export async function createEmailVerificationToken(userId: string, userEmail: string) {
   const token = generateToken();
@@ -38,7 +39,8 @@ export async function createEmailVerificationToken(userId: string, userEmail: st
     console.log(`[AUTH] Verification email sent to: ${userEmail}`);
   } catch (error) {
     console.error('[AUTH] Failed to send verification email:', error);
-    // Не бросаем ошибку, чтобы регистрация все равно прошла
+    // Бросаем ошибку, чтобы вызывающий код знал о проблеме
+    throw new Error('Failed to send verification email');
   }
 
   return { token, verifyUrl };

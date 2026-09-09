@@ -57,14 +57,14 @@ export default function RegisterPage() {
               Регистрация успешна!
             </h1>
             <p className="text-gray-600 mb-6">
-              Мы отправили письмо с подтверждением на ваш email.
+              Мы отправили письмо с подтверждением на ваш email. Проверьте папку "Спам", если не нашли письмо.
             </p>
 
-            {/* Временно показываем ссылку */}
-            {verifyUrl && (
+            {/* Показываем ссылку только в development */}
+            {verifyUrl && process.env.NODE_ENV === 'development' && (
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-900 mb-2 font-semibold">
-                  Для разработки - ссылка подтверждения:
+                  [DEV] Ссылка подтверждения:
                 </p>
                 <a
                   href={verifyUrl}

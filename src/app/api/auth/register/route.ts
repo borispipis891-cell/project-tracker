@@ -53,36 +53,87 @@ export async function POST(request: Request) {
     const userCount = await prisma.user.count();
     const isFirstUser = userCount === 0;
 
-    console.log('[REGISTER] Creating user...');
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email: normalizedEmail,
-        password: passwordHash,
-        emailVerified: false,
-        isBlocked: false,
-        role: isFirstUser ? 'admin' : 'user',
-        status: 'active',
-        permissions: {},
-      },
-    });
-    console.log('[REGISTER] User created:', user.id, 'Role:', user.role);
+    console.log('[REGISTER] Creating user and verification token in transaction...');
+    let userId: string;
+    let verifyUrl: string | undefined;
 
-    // Create verification token
-    console.log('[REGISTER] Creating verification token...');
-    const { verifyUrl } = await createEmailVerificationToken(user.id, user.email);
-    console.log('[REGISTER] Token created and email sent');
+    try {
+      // Создаем пользователя и токен в одной транзакции
+      const result = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            name,
+            email: normalizedEmail,
+            password: passwordHash,
+            emailVerified: false,
+            isBlocked: false,
+            role: isFirstUser ? 'admin' : 'user',
+            status: 'active',
+            permissions: {},
+          },
+        });
 
-    return NextResponse.json({
+        const token = await tx.verificationToken.create({
+          data: {
+            token: require('crypto').randomBytes(32).toString('hex'),
+            type: 'EMAIL_VERIFY',
+            userId: user.id,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        });
+
+        const APP_URL = process.env.APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        const url = `${APP_URL}/verify-email?token=${token.token}`;
+
+        return { user, token, verifyUrl: url };
+      });
+
+      userId = result.user.id;
+      verifyUrl = result.verifyUrl;
+      console.log('[REGISTER] User and token created:', userId, 'Role:', result.user.role);
+
+      // Отправляем письмо ПОСЛЕ транзакции
+      try {
+        const { sendVerificationEmail } = await import('@/lib/email');
+        await sendVerificationEmail(normalizedEmail, verifyUrl);
+        console.log('[REGISTER] Verification email sent to:', normalizedEmail);
+      } catch (emailError) {
+        console.error('[REGISTER] Failed to send verification email:', emailError);
+        // Не бросаем ошибку - пользователь создан, можно отправить письмо повторно
+      }
+    } catch (error) {
+      console.error('[REGISTER] Transaction failed:', error);
+      throw error;
+    }
+
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const response: { message: string; verifyUrl?: string } = {
       message: isFirstUser
-        ? "Регистрация успешна! Вы назначены администратором."
+        ? "Регистрация успешна! Вы назначены администратором. Проверьте email для подтверждения."
         : "Регистрация успешна! Проверьте email для подтверждения.",
-      verifyUrl,
-    });
+    };
+
+    // Возвращаем verifyUrl только в development
+    if (isDevelopment && verifyUrl) {
+      response.verifyUrl = verifyUrl;
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error('[REGISTER] Error:', error);
+
+    // Не возвращаем технические детали клиенту
+    let errorMessage = "Не удалось зарегистрировать пользователя. Попробуйте позже.";
+
+    // Только для известных ошибок показываем понятное сообщение
+    if (error instanceof Error) {
+      if (error.message.includes('Unique constraint')) {
+        errorMessage = "Пользователь с таким email уже зарегистрирован";
+      }
+    }
+
     return NextResponse.json(
-      { error: "Ошибка сервера: " + (error instanceof Error ? error.message : String(error)) },
+      { error: errorMessage },
       { status: 500 }
     );
   }

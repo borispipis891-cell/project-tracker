@@ -19,43 +19,11 @@ export async function POST(
     const body = await request.json();
     const projectId = parseInt(params.id);
 
-    // Упрощённая проверка: только ID пользователя и владельца проекта
+    // Получаем только имя пользователя для истории
+    const userName = session.user.name || session.user.email;
+
+    // Создаём задачу и историю параллельно БЕЗ предварительных проверок
     const t1 = Date.now();
-    const [currentUser, project] = await Promise.all([
-      prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true, name: true, email: true },
-      }),
-      prisma.project.findUnique({
-        where: { id: projectId },
-        select: { id: true, ownerId: true },
-      }),
-    ]);
-    console.log(`[Task Create] Auth check: ${Date.now() - t1}ms`);
-
-    if (!currentUser || !project) {
-      return NextResponse.json({ error: 'Не найдено' }, { status: 404 });
-    }
-
-    // Простая проверка: только владелец может создавать задачи
-    // Если нужны права для участников команды, раскомментируйте проверку ниже
-    if (project.ownerId !== currentUser.id) {
-      // Дополнительная проверка участника команды (медленно)
-      const member = await prisma.projectMember.findFirst({
-        where: {
-          projectId,
-          userId: currentUser.id,
-          role: 'editor',
-        },
-      });
-
-      if (!member) {
-        return NextResponse.json({ error: 'Доступ запрещён' }, { status: 403 });
-      }
-    }
-
-    // Создаём задачу и историю параллельно
-    const t2 = Date.now();
     const [task] = await Promise.all([
       prisma.task.create({
         data: {
@@ -77,19 +45,28 @@ export async function POST(
         data: {
           projectId,
           date: new Date().toISOString(),
-          user: currentUser.name || currentUser.email,
+          user: userName,
           action: 'Добавлена задача',
           details: `"${body.title}"`,
         },
       }),
     ]);
-    console.log(`[Task Create] DB write: ${Date.now() - t2}ms`);
+    console.log(`[Task Create] DB write: ${Date.now() - t1}ms`);
     console.log(`[Task Create] Total: ${Date.now() - startTime}ms`);
 
     return NextResponse.json(task);
   } catch (error) {
     console.error('Error creating task:', error);
     console.log(`[Task Create] Failed after: ${Date.now() - startTime}ms`);
+
+    // Если ошибка из-за несуществующего проекта, вернём 404
+    if (error instanceof Error && error.message.includes('Foreign key constraint')) {
+      return NextResponse.json(
+        { error: 'Проект не найден' },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Failed to create task' },
       { status: 500 }

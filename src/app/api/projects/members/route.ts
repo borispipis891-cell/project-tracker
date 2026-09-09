@@ -76,7 +76,7 @@ export async function GET(request: Request) {
       email: m.User.email,
       avatar: m.User.avatar,
       role: m.role,
-      addedAt: m.addedAt,
+      addedAt: m.createdAt,
     }));
 
     return NextResponse.json({

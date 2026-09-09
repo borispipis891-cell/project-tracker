@@ -851,14 +851,14 @@ export default function ProjectsPage() {
       });
 
       if (response.ok) {
-        // Refresh project to get updated history
-        const projectResponse = await fetch(`/api/projects/${projectId}`);
-        if (projectResponse.ok) {
-          const updatedProject = await projectResponse.json() as Project;
-          setProjects(projects.map(p =>
-            p.id === projectId ? { ...updatedProject, expanded: p.expanded } : p
-          ));
-        }
+        // Обновляем задачу локально без повторного запроса проекта
+        const returnedTask = await response.json();
+        setProjects(projects.map(p =>
+          p.id === projectId ? {
+            ...p,
+            tasks: p.tasks.map(t => t.id === taskId ? returnedTask : t)
+          } : p
+        ));
       }
     } catch (error) {
       console.error('Failed to update task:', error);
@@ -889,14 +889,15 @@ export default function ProjectsPage() {
       });
 
       if (response.ok) {
-        // Refresh project to get updated history
-        const projectResponse = await fetch(`/api/projects/${projectId}`);
-        if (projectResponse.ok) {
-          const updatedProject = await projectResponse.json() as Project;
-          setProjects(projects.map(p =>
-            p.id === projectId ? { ...updatedProject, expanded: p.expanded } : p
-          ));
-        }
+        // Обновляем задачу локально без повторного запроса проекта
+        const returnedTask = await response.json();
+        setProjects(projects.map(p =>
+          p.id === projectId ? {
+            ...p,
+            tasks: p.tasks.map(t => t.id === taskId ? returnedTask : t)
+          } : p
+        ));
+      }
       }
     } catch (error) {
       console.error('Failed to toggle task:', error);
@@ -933,14 +934,14 @@ export default function ProjectsPage() {
         return;
       }
 
-      // Refresh project to get updated task list and history
-      const projectResponse = await fetch(`/api/projects/${projectId}`);
-      if (projectResponse.ok) {
-        const updatedProject = await projectResponse.json() as Project;
-        setProjects(projects.map(p =>
-          p.id === projectId ? { ...updatedProject, expanded: p.expanded } : p
-        ));
-      }
+      // Используем созданную задачу напрямую без повторного запроса проекта
+      const createdTask = await response.json();
+      setProjects(projects.map(p =>
+        p.id === projectId ? {
+          ...p,
+          tasks: [...p.tasks, createdTask]
+        } : p
+      ));
     } catch (error) {
       console.error('Failed to add task:', error);
       alert('Ошибка добавления задачи');
@@ -990,14 +991,13 @@ export default function ProjectsPage() {
         return;
       }
 
-      // Refresh project to get updated history
-      const projectResponse = await fetch(`/api/projects/${projectId}`);
-      if (projectResponse.ok) {
-        const updatedProject = await projectResponse.json() as Project;
-        setProjects(projects.map(p =>
-          p.id === projectId ? { ...updatedProject, expanded: p.expanded } : p
-        ));
-      }
+      // Удаляем задачу локально без повторного запроса проекта
+      setProjects(projects.map(p =>
+        p.id === projectId ? {
+          ...p,
+          tasks: p.tasks.filter(t => t.id !== taskId)
+        } : p
+      ));
     } catch (error) {
       console.error('Failed to delete task:', error);
       alert('Ошибка удаления задачи');

@@ -116,6 +116,7 @@ model ProjectMember {
 model Task {
   id           Int       @id @default(autoincrement())
   title        String
+  description  String    @default("")
   status       String
   receivedAt   String
   deadline     String

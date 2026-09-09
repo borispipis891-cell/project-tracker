@@ -37,9 +37,10 @@ export async function POST(
       data: {
         projectId,
         title: body.title,
+        description: body.description || '',
         status: body.status || 'not_started',
-        receivedAt: body.receivedAt,
-        deadline: body.deadline,
+        receivedAt: body.receivedAt || '',
+        deadline: body.deadline || '',
         completedAt: body.completedAt,
         responsible: body.responsible,
         engineer: body.engineer,

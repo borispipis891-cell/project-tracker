@@ -42,6 +42,7 @@ export async function POST(
         priority: body.priority || 'medium',
         receivedAt: body.receivedAt || '',
         deadline: body.deadline || '',
+        dueDate: body.dueDate || body.deadline || '',
         completedAt: body.completedAt,
         responsible: body.responsible,
         engineer: body.engineer,

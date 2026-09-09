@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Attachment {
-  id           String   @id @default(cuid())
+  id           String   @id
   name         String
   size         Int
   mimeType     String?
@@ -39,7 +39,7 @@ model Comment {
 }
 
 model Invitation {
-  id        String   @id @default(cuid())
+  id        String   @id
   email     String
   role      String
   token     String   @unique
@@ -61,18 +61,18 @@ model Project {
   receivedAt     String
   deadline       String
   completedAt    String?
-  customer       String?
-  pss            String?
-  reg            String?
+  customer       String
+  pss            String
+  reg            String
   status         String
   priority       String
-  responsible    String?
-  engineer       String?
+  responsible    String
+  engineer       String
   customFields   Json?
   ownerId        String?
   deletedAt      DateTime?
   createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @default(now()) @updatedAt
+  updatedAt      DateTime         @default(now())
   color          String?          @default("#3B82F6")
   tags           String[]         @default([])
   Attachment     Attachment[]
@@ -100,7 +100,7 @@ model ProjectHistory {
 }
 
 model ProjectMember {
-  id        String   @id @default(cuid())
+  id        String   @id
   role      String
   projectId Int
   userId    String
@@ -121,6 +121,7 @@ model Task {
   priority     String    @default("medium")
   receivedAt   String
   deadline     String
+  dueDate      String
   completedAt  String?
   responsible  String?
   engineer     String?
@@ -128,7 +129,7 @@ model Task {
   projectId    Int
   deletedAt    DateTime?
   createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @default(now()) @updatedAt
+  updatedAt    DateTime  @default(now())
   Comment      Comment[]
   Project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -136,7 +137,7 @@ model Task {
 }
 
 model User {
-  id                   String              @id @default(cuid())
+  id                   String              @id
   name                 String
   email                String              @unique
   password             String
@@ -159,7 +160,7 @@ model User {
 }
 
 model VerificationToken {
-  id        String    @id @default(cuid())
+  id        String    @id
   token     String    @unique
   type      String
   userId    String

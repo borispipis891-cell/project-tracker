@@ -104,7 +104,7 @@ model ProjectMember {
   role      String
   projectId Int
   userId    String
-  addedAt   DateTime @default(now())
+  createdAt DateTime @default(now())
   Project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

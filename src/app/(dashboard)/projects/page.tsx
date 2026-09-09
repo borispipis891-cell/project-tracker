@@ -100,7 +100,8 @@ interface StoredUser {
   status: 'active' | 'pending' | 'blocked';
 }
 
-const TODAY = new Date('2026-09-01T00:00:00');
+const TODAY = new Date();
+TODAY.setHours(0, 0, 0, 0);
 const CURRENT_USER = 'Борис';
 
 const getCurrentUserPermissions = () => {

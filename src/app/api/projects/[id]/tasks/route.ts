@@ -10,67 +10,81 @@ export async function POST(
 ) {
   const startTime = Date.now();
   try {
-    const t1 = Date.now();
     const session = await getServerSession(authOptions);
-    console.log(`[Task Create] Session: ${Date.now() - t1}ms`);
 
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
     }
 
-    const t2 = Date.now();
-    const currentUser = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-    console.log(`[Task Create] Find user: ${Date.now() - t2}ms`);
+    const body = await request.json();
+    const projectId = parseInt(params.id);
+
+    // Объединяем запросы: получаем пользователя и проверяем права одновременно
+    const t1 = Date.now();
+    const [currentUser, project] = await Promise.all([
+      prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true, name: true, email: true },
+      }),
+      prisma.project.findUnique({
+        where: { id: projectId },
+        include: {
+          ProjectMember: {
+            where: { userId: { not: undefined } },
+            select: { role: true, userId: true },
+          },
+        },
+      }),
+    ]);
+    console.log(`[Task Create] Parallel fetch: ${Date.now() - t1}ms`);
 
     if (!currentUser) {
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
     }
 
-    const projectId = parseInt(params.id);
+    if (!project) {
+      return NextResponse.json({ error: 'Проект не найден' }, { status: 404 });
+    }
 
-    // Check edit access
-    const t3 = Date.now();
-    const permissions = await getUserProjectRole(currentUser.id, projectId);
-    console.log(`[Task Create] Check permissions: ${Date.now() - t3}ms`);
-    if (!permissions?.canEdit) {
+    // Проверяем права локально, без дополнительного запроса
+    const isOwner = project.ownerId === currentUser.id;
+    const memberRole = project.ProjectMember.find(m => m.userId === currentUser.id)?.role;
+    const canEdit = isOwner || memberRole === 'editor';
+
+    if (!canEdit) {
       return NextResponse.json({ error: 'Доступ запрещён' }, { status: 403 });
     }
 
-    const body = await request.json();
-
-    const t4 = Date.now();
-    const task = await prisma.task.create({
-      data: {
-        projectId,
-        title: body.title,
-        description: body.description || '',
-        status: body.status || 'not_started',
-        priority: body.priority || 'medium',
-        receivedAt: body.receivedAt || '',
-        deadline: body.deadline || '',
-        dueDate: body.dueDate || body.deadline || '',
-        completedAt: body.completedAt,
-        responsible: body.responsible,
-        engineer: body.engineer,
-        customFields: body.customFields || {},
-      },
-    });
-    console.log(`[Task Create] Create task: ${Date.now() - t4}ms`);
-
-    // Add history entry
-    const t5 = Date.now();
-    await prisma.projectHistory.create({
-      data: {
-        projectId,
-        date: new Date().toISOString(),
-        user: currentUser.name || currentUser.email,
-        action: 'Добавлена задача',
-        details: `"${body.title}"`,
-      },
-    });
-    console.log(`[Task Create] Create history: ${Date.now() - t5}ms`);
+    // Создаём задачу и запись истории параллельно
+    const t2 = Date.now();
+    const [task] = await Promise.all([
+      prisma.task.create({
+        data: {
+          projectId,
+          title: body.title,
+          description: body.description || '',
+          status: body.status || 'not_started',
+          priority: body.priority || 'medium',
+          receivedAt: body.receivedAt || '',
+          deadline: body.deadline || '',
+          dueDate: body.dueDate || body.deadline || '',
+          completedAt: body.completedAt,
+          responsible: body.responsible,
+          engineer: body.engineer,
+          customFields: body.customFields || {},
+        },
+      }),
+      prisma.projectHistory.create({
+        data: {
+          projectId,
+          date: new Date().toISOString(),
+          user: currentUser.name || currentUser.email,
+          action: 'Добавлена задача',
+          details: `"${body.title}"`,
+        },
+      }),
+    ]);
+    console.log(`[Task Create] Parallel create: ${Date.now() - t2}ms`);
     console.log(`[Task Create] Total: ${Date.now() - startTime}ms`);
 
     return NextResponse.json(task);

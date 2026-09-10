@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import * as XLSX from 'xlsx';
 import { SignOutButton } from './sign-out-button';
 import { migrateFromLocalStorage } from '@/lib/migrateLocalStorage';
 import FileUpload from '@/components/FileUpload';
@@ -241,6 +240,7 @@ export default function ProjectsPage() {
   const [newProjectColor, setNewProjectColor] = useState('#3B82F6');
   const [newProjectTags, setNewProjectTags] = useState<string[]>([]);
   const [projectSubmitting, setProjectSubmitting] = useState(false);
+  const [excelExporting, setExcelExporting] = useState(false);
   const [editingTask, setEditingTask] = useState<{ projectId: number; task: Task } | null>(null);
   const [showProjectComments, setShowProjectComments] = useState<number | null>(null);
   const [showTaskComments, setShowTaskComments] = useState<{ projectId: number; taskId: number } | null>(null);
@@ -1311,72 +1311,72 @@ export default function ProjectsPage() {
     };
   }, [resizingColumn, resizeStartX, resizeStartWidth]);
 
-  const exportToExcel = () => {
-    const data = projects.map(project => ({
-      'Проект': project.name,
-      'Заказчик': project.customer,
-      'PSS': project.pss,
-      'Регистрация': project.reg,
-      'Статус': STATUS_LABELS[project.status],
-      'Приоритет': PRIORITY_LABELS[project.priority],
-      'Дата поступления': project.receivedAt,
-      'Дедлайн': project.deadline,
-      'Ответственный': project.responsible,
-      'Инженер': project.engineer,
-      'Количество задач': project.tasks.length,
-      'Выполнено задач': project.tasks.filter(t => t.status === 'done').length
-    }));
+  const exportToExcel = async () => {
+    if (excelExporting) return;
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Проекты');
-
-    // Add tasks sheet
-    const tasksData: any[] = [];
-    projects.forEach(project => {
-      project.tasks.forEach(task => {
-        tasksData.push({
-          'Проект': project.name,
-          'Задача': task.title,
-          'Статус': TASK_STATUS_LABELS[task.status],
-          'Дата поступления': task.receivedAt || '—',
-          'Дедлайн': task.deadline,
-          'Ответственный': task.responsible || '—',
-          'Инженер': task.engineer || '—'
-        });
+    setExcelExporting(true);
+    try {
+      const { downloadProjectsWorkbook } = await import('@/lib/excel-export');
+      await downloadProjectsWorkbook(projects, {
+        projectStatuses: { ...STATUS_LABELS },
+        priorities: { ...PRIORITY_LABELS },
+        taskStatuses: { ...TASK_STATUS_LABELS },
       });
-    });
-    const wsTasksSheet = XLSX.utils.json_to_sheet(tasksData);
-    XLSX.utils.book_append_sheet(wb, wsTasksSheet, 'Задачи');
-
-    const fileName = `проекты_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    } catch (error) {
+      console.error('Error exporting Excel file:', error);
+      alert('Не удалось создать Excel-файл. Попробуйте ещё раз.');
+    } finally {
+      setExcelExporting(false);
+    }
   };
 
   const exportToCSV = () => {
-    const data = projects.map(project => ({
-      'Проект': project.name,
-      'Заказчик': project.customer,
-      'PSS': project.pss,
-      'Регистрация': project.reg,
-      'Статус': STATUS_LABELS[project.status],
-      'Приоритет': PRIORITY_LABELS[project.priority],
-      'Дата поступления': project.receivedAt,
-      'Дедлайн': project.deadline,
-      'Ответственный': project.responsible,
-      'Инженер': project.engineer,
-      'Количество задач': project.tasks.length,
-      'Выполнено задач': project.tasks.filter(t => t.status === 'done').length
-    }));
+    const headers = [
+      'Проект',
+      'Заказчик',
+      'PSS',
+      'Регистрация',
+      'Статус',
+      'Приоритет',
+      'Дата поступления',
+      'Дедлайн',
+      'Ответственный',
+      'Инженер',
+      'Количество задач',
+      'Выполнено задач',
+    ];
+    const rows = projects.map(project => [
+      project.name,
+      project.customer,
+      project.pss,
+      project.reg,
+      STATUS_LABELS[project.status],
+      PRIORITY_LABELS[project.priority],
+      project.receivedAt,
+      project.deadline,
+      project.responsible,
+      project.engineer,
+      project.tasks.length,
+      project.tasks.filter(task => task.status === 'done').length,
+    ]);
+    const escapeCell = (value: unknown) => {
+      const text = String(value ?? '');
+      const safeText = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+      return `"${safeText.replace(/"/g, '""')}"`;
+    };
+    const csv = [headers, ...rows]
+      .map(row => row.map(escapeCell).join(','))
+      .join('\r\n');
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const csv = XLSX.utils.sheet_to_csv(ws);
-
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.download = `проекты_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
     link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   };
 
   // File handling functions
@@ -1459,11 +1459,13 @@ export default function ProjectsPage() {
           {permissions.canExport && (
             <>
               <button
-                onClick={exportToExcel}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
+                onClick={() => void exportToExcel()}
+                disabled={excelExporting}
+                aria-busy={excelExporting}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
                 title="Экспорт в Excel"
               >
-                📊 Excel
+                {excelExporting ? '⏳ Создание...' : '📊 Excel'}
               </button>
               <button
                 onClick={exportToCSV}

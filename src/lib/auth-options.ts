@@ -30,7 +30,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (user.isBlocked) {
-          throw new Error("Ваш аккаунт заблокирован. Обратитесь к администратору.");
+          throw new Error("❄️ Ваш аккаунт заморожен. Обратитесь к администратору.");
         }
 
         if (!user.emailVerified) {

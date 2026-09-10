@@ -141,7 +141,7 @@ function getStageFromStatus(status: string): string {
     'review': 'На проверке',
     'testing': 'Тестирование',
     'done': 'Завершено',
-    'blocked': 'Заблокировано',
+    'blocked': '❄️ Заморожено',
     'waiting': 'Ожидание',
   };
   return stageMap[status] || status;
@@ -156,7 +156,7 @@ function getStatusLabel(status: string): string {
     'review': 'На проверке',
     'testing': 'Тестирование',
     'done': 'Завершено',
-    'blocked': 'Заблокировано',
+    'blocked': '❄️ Заморожено',
     'waiting': 'Ожидание',
   };
   return labels[status] || status;
@@ -170,7 +170,7 @@ function getStatusColor(statusLabel: string): string {
     'На проверке': '#F59E0B',
     'Тестирование': '#8B5CF6',
     'Завершено': '#10B981',
-    'Заблокировано': '#EF4444',
+    '❄️ Заморожено': '#0EA5E9',
     'Ожидание': '#F59E0B',
   };
   return colors[statusLabel] || '#6B7280';

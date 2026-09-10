@@ -44,6 +44,7 @@ export async function GET(
         },
         Task: {
           orderBy: { createdAt: 'desc' },
+          include: { Comment: { orderBy: { createdAt: 'asc' } } },
         },
         Comment: {
           orderBy: { createdAt: 'desc' },
@@ -65,7 +66,7 @@ export async function GET(
     return NextResponse.json({
       ...project,
       owner: project.User,
-      tasks: project.Task,
+      tasks: project.Task.map(task => ({ ...task, comments: task.Comment })),
       comments: project.Comment,
       history: project.ProjectHistory,
       attachments: project.Attachment,
@@ -149,6 +150,7 @@ export async function PUT(
         },
         Task: {
           orderBy: { createdAt: 'desc' },
+          include: { Comment: { orderBy: { createdAt: 'asc' } } },
         },
         Comment: {
           orderBy: { createdAt: 'desc' },
@@ -246,7 +248,7 @@ export async function PUT(
     return NextResponse.json({
       ...project,
       owner: project.User,
-      tasks: project.Task,
+      tasks: project.Task.map(task => ({ ...task, comments: task.Comment })),
       comments: project.Comment,
       history: project.ProjectHistory,
       attachments: project.Attachment,

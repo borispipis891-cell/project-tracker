@@ -84,7 +84,7 @@ export async function GET(
         status === 'review' ? 'На проверке' :
         status === 'testing' ? 'Тестирование' :
         status === 'done' ? 'Завершено' :
-        status === 'blocked' ? 'Заблокировано' : status;
+        status === 'blocked' ? '❄️ Заморожено' : status;
 
       return {
         status: statusName,

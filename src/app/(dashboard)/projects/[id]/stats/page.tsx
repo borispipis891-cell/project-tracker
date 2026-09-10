@@ -59,7 +59,7 @@ const STAGE_COLORS = {
   'В работе': '#3B82F6',
   'На проверке': '#F59E0B',
   'Завершена': '#10B981',
-  'Заблокирована': '#EF4444'
+  '❄️ Заморожена': '#0EA5E9'
 };
 
 export default function ProjectStatsPage() {
@@ -302,12 +302,12 @@ export default function ProjectStatsPage() {
                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                       task.status === 'completed' ? 'bg-green-100 text-green-700' :
                       task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-                      task.status === 'blocked' ? 'bg-red-100 text-red-700' :
+                      task.status === 'blocked' ? 'bg-sky-100 text-sky-700' :
                       'bg-gray-100 text-gray-700'
                     }`}>
                       {task.status === 'completed' ? 'Завершена' :
                        task.status === 'in_progress' ? 'В работе' :
-                       task.status === 'blocked' ? 'Заблокирована' :
+                       task.status === 'blocked' ? '❄️ Заморожена' :
                        'Новая'}
                     </span>
                   </td>

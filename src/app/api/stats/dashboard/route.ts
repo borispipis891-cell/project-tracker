@@ -58,7 +58,7 @@ export async function GET() {
       name: name === 'new' ? 'Новые' :
             name === 'progress' ? 'В работе' :
             name === 'waiting' ? 'Ожидают' :
-            name === 'blocked' ? 'Заблокированы' :
+            name === 'blocked' ? '❄️ Заморожены' :
             name === 'done' ? 'Завершенные' : name,
       value,
       color: name === 'progress' ? '#3B82F6' :

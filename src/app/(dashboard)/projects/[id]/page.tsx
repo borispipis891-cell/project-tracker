@@ -39,7 +39,7 @@ const STATUS_LABELS: Record<string, string> = {
   new: 'Новый',
   progress: 'В работе',
   done: 'Завершён',
-  blocked: 'Заблокирован',
+  blocked: '❄️ Заморожен',
   waiting: 'Ожидание'
 };
 
@@ -99,7 +99,7 @@ export default function ProjectDetailPage() {
       new: 'bg-gray-100 text-gray-700',
       progress: 'bg-blue-100 text-blue-700',
       done: 'bg-green-100 text-green-700',
-      blocked: 'bg-red-100 text-red-700',
+      blocked: 'bg-sky-100 text-sky-700',
       waiting: 'bg-yellow-100 text-yellow-700'
     };
     return colors[status] || 'bg-gray-100 text-gray-700';

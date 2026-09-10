@@ -54,7 +54,7 @@ const STATUS_COLORS: Record<string, string> = {
   'in-progress': '#3B82F6',
   'review': '#F59E0B',
   'done': '#10B981',
-  'blocked': '#EF4444'
+  'blocked': '#0EA5E9'
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -62,7 +62,7 @@ const STATUS_LABELS: Record<string, string> = {
   'in-progress': 'В работе',
   'review': 'На проверке',
   'done': 'Завершено',
-  'blocked': 'Заблокировано'
+  'blocked': '❄️ Заморожено'
 };
 
 export default function ProjectAnalyticsPage() {

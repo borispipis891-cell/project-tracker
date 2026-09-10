@@ -263,7 +263,7 @@ export default function DashboardPage() {
                           : project.status === 'progress'
                           ? 'bg-blue-100 text-blue-700'
                           : project.status === 'blocked'
-                          ? 'bg-red-100 text-red-700'
+                          ? 'bg-sky-100 text-sky-700'
                           : 'bg-gray-100 text-gray-700'
                       }`}
                     >
@@ -272,7 +272,7 @@ export default function DashboardPage() {
                         : project.status === 'progress'
                         ? 'В работе'
                         : project.status === 'blocked'
-                        ? 'Заблокирован'
+                        ? '❄️ Заморожен'
                         : project.status === 'new'
                         ? 'Новый'
                         : 'Ожидает'}

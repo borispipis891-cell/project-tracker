@@ -42,6 +42,7 @@ export async function GET(request: Request) {
         },
         Task: {
           orderBy: { createdAt: 'desc' },
+          include: { Comment: { orderBy: { createdAt: 'asc' } } },
         },
         Comment: {
           orderBy: { createdAt: 'desc' },
@@ -64,7 +65,7 @@ export async function GET(request: Request) {
       return {
         ...project,
         owner: project.User, // Add owner alias for frontend compatibility
-        tasks: project.Task, // Add tasks alias
+        tasks: project.Task.map(task => ({ ...task, comments: task.Comment })),
         comments: project.Comment, // Add comments alias
         attachments: project.Attachment, // Add attachments alias
         history: project.ProjectHistory, // Add history alias

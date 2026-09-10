@@ -24,7 +24,7 @@ interface Task {
   completedAt?: string;
   responsible?: string;
   engineer?: string;
-  comments?: Array<{ author: string; date: string; text: string }>;
+  comments?: Array<{ id?: number; author: string; date: string; text: string }>;
   customFields?: Record<string, string>;
 }
 
@@ -45,7 +45,7 @@ interface Project {
   tags?: string[];
   expanded: boolean;
   tasks: Task[];
-  comments?: Array<{ author: string; date: string; text: string }>;
+  comments?: Array<{ id?: number; author: string; date: string; text: string }>;
   customFields?: Record<string, string>;
   history?: Array<{ date: string; user: string; action: string; details: string }>;
   attachments?: Array<{ id: string; name: string; size: number; mimeType?: string; url: string; uploadedAt: string; uploadedBy?: string }>;
@@ -75,14 +75,14 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   new: 'Новый',
   progress: 'В работе',
   done: 'Завершён',
-  blocked: 'Заблокирован',
+  blocked: '❄️ Заморожен',
   waiting: 'Ожидание'
 };
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   not_started: 'Не начата',
   progress: 'В работе',
-  blocked: 'Заблокирована',
+  blocked: '❄️ Заморожена',
   review: 'На проверке',
   done: 'Выполнена'
 };
@@ -109,6 +109,19 @@ interface StoredUser {
 
 const TODAY = new Date();
 TODAY.setHours(0, 0, 0, 0);
+
+const applySavedTaskOrder = (project: any): Project => {
+  const tasks = [...(project.tasks || project.Task || [])];
+  try {
+    const savedOrder = JSON.parse(project.customFields?.__taskOrder || '[]') as number[];
+    const positions = new Map(savedOrder.map((id, index) => [id, index]));
+    tasks.sort((a, b) => (positions.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (positions.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+  } catch {
+    // Ignore an invalid legacy order and use the database order.
+  }
+  return { ...project, tasks };
+};
+
 const DEMO_PROJECTS: Project[] = [
   {
     id: 1,
@@ -341,13 +354,13 @@ export default function ProjectsPage() {
         const response = await fetch('/api/projects/list');
         if (response.ok) {
           const data = await response.json();
-          setProjects(data.projects.map((p: any) => ({ ...p, expanded: false })));
+          setProjects(data.projects.map((p: any) => applySavedTaskOrder({ ...p, expanded: false })));
         } else {
           // Fallback to regular endpoint if list endpoint not available
           const fallbackResponse = await fetch('/api/projects');
           if (fallbackResponse.ok) {
             const data = await fallbackResponse.json();
-            setProjects(data.map((p: any) => ({ ...p, expanded: false })));
+            setProjects(data.map((p: any) => applySavedTaskOrder({ ...p, expanded: false })));
           }
         }
       } catch (error) {
@@ -867,7 +880,7 @@ export default function ProjectsPage() {
         const returnedTask = await response.json();
         setProjects(current => current.map(p => p.id === projectId ? {
           ...p,
-          tasks: p.tasks.map(t => t.id === taskId ? returnedTask : t),
+          tasks: p.tasks.map(t => t.id === taskId ? { ...returnedTask, comments: t.comments } : t),
         } : p));
       } catch (error) {
         console.error('Failed to update task:', error);
@@ -904,7 +917,7 @@ export default function ProjectsPage() {
         setProjects(projects.map(p =>
           p.id === projectId ? {
             ...p,
-            tasks: p.tasks.map(t => t.id === taskId ? returnedTask : t)
+            tasks: p.tasks.map(t => t.id === taskId ? { ...returnedTask, comments: t.comments } : t)
           } : p
         ));
       }
@@ -1013,6 +1026,38 @@ export default function ProjectsPage() {
     }
   };
 
+  const moveTask = async (projectId: number, taskId: number, direction: -1 | 1) => {
+    const project = projects.find(item => item.id === projectId);
+    if (!project) return;
+    const currentIndex = project.tasks.findIndex(task => task.id === taskId);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= project.tasks.length) return;
+
+    const tasks = [...project.tasks];
+    [tasks[currentIndex], tasks[targetIndex]] = [tasks[targetIndex], tasks[currentIndex]];
+    const updatedProject = {
+      ...project,
+      tasks,
+      customFields: {
+        ...(project.customFields || {}),
+        __taskOrder: JSON.stringify(tasks.map(task => task.id)),
+      },
+    };
+    setProjects(current => current.map(item => item.id === projectId ? updatedProject : item));
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedProject),
+      });
+      if (!response.ok) throw new Error('Не удалось сохранить порядок задач');
+    } catch (error) {
+      console.error(error);
+      alert('Не удалось сохранить порядок задач');
+    }
+  };
+
   const openEditModal = (project: Project) => {
     setEditingProject(project);
     setShowModal(true);
@@ -1024,6 +1069,41 @@ export default function ProjectsPage() {
 
   const openProjectComments = (projectId: number) => {
     setShowProjectComments(projectId);
+  };
+
+  const addProjectComment = async (projectId: number, text: string) => {
+    const response = await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, text }),
+    });
+    if (!response.ok) throw new Error('Не удалось добавить комментарий');
+    const comment = await response.json();
+    setProjects(current => current.map(project => project.id === projectId
+      ? { ...project, comments: [...(project.comments || []), comment] }
+      : project));
+  };
+
+  const addTaskComment = async (projectId: number, taskId: number, text: string) => {
+    const response = await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, taskId, text }),
+    });
+    if (!response.ok) throw new Error('Не удалось добавить комментарий');
+    const comment = await response.json();
+    setProjects(current => current.map(project => project.id === projectId ? {
+      ...project,
+      tasks: project.tasks.map(task => task.id === taskId
+        ? { ...task, comments: [...(task.comments || []), comment] }
+        : task),
+    } : project));
+  };
+
+  const deleteComment = async (commentId?: number) => {
+    if (!commentId) return;
+    const response = await fetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Не удалось удалить комментарий');
   };
 
   const updateTaskCustomField = (projectId: number, taskId: number, fieldId: string, value: string) => {
@@ -1127,7 +1207,7 @@ export default function ProjectsPage() {
       status: (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus,
       priority: (document.getElementById('f_priority') as HTMLSelectElement).value as Priority,
       responsible: (document.getElementById('f_responsible') as HTMLSelectElement).value,
-      engineer: (document.getElementById('f_engineer') as HTMLSelectElement).value,
+      engineer: (document.getElementById('f_engineer') as HTMLInputElement).value,
       color: editingProject?.color || newProjectColor,
       tags: editingProject?.tags || newProjectTags,
     };
@@ -1188,7 +1268,7 @@ export default function ProjectsPage() {
       new: 'bg-gray-100 text-gray-700',
       progress: 'bg-blue-100 text-blue-700',
       done: 'bg-green-100 text-green-700',
-      blocked: 'bg-red-100 text-red-700',
+      blocked: 'bg-sky-100 text-sky-700',
       waiting: 'bg-yellow-100 text-yellow-700'
     };
     return colors[status];
@@ -1198,7 +1278,7 @@ export default function ProjectsPage() {
     const colors = {
       not_started: 'bg-gray-100 text-gray-700',
       progress: 'bg-blue-100 text-blue-700',
-      blocked: 'bg-red-100 text-red-700',
+      blocked: 'bg-sky-100 text-sky-700',
       review: 'bg-yellow-100 text-yellow-700',
       done: 'bg-green-100 text-green-700'
     };
@@ -1709,7 +1789,7 @@ export default function ProjectsPage() {
           { key: 'overdue' as FilterType, label: 'Просроченные' },
           { key: 'week' as FilterType, label: 'На этой неделе' },
           { key: 'high' as FilterType, label: 'Высокий приоритет' },
-          { key: 'blocked' as FilterType, label: 'Заблокированные' },
+          { key: 'blocked' as FilterType, label: '❄️ Замороженные' },
           { key: 'done' as FilterType, label: 'Выполненные' }
         ].map(f => (
           <button
@@ -1986,14 +2066,13 @@ export default function ProjectsPage() {
                       if (colId === 'engineer') {
                         return (
                           <td key={colId} className="px-3 py-2">
-                            <select
+                            <input
+                              type="text"
                               value={project.engineer}
                               onChange={(e) => updateProject(project.id, 'engineer', e.target.value)}
+                              placeholder="Введите имя"
                               className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
-                            >
-                              <option value="">Не назначен</option>
-                              {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
-                            </select>
+                            />
                           </td>
                         );
                       }
@@ -2023,10 +2102,11 @@ export default function ProjectsPage() {
                         </span>
                         <button
                           onClick={() => openProjectComments(project.id)}
-                          className="text-gray-600 hover:text-gray-800 text-sm px-1"
+                          className={`relative rounded px-1.5 py-1 text-sm ${project.comments?.length ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-300' : 'text-gray-600 hover:text-gray-800'}`}
                           title="Комментарии"
                         >
                           💬
+                          {!!project.comments?.length && <span className="ml-1 text-[10px] font-bold">{project.comments.length}</span>}
                         </button>
                         <button
                           onClick={() => setShowProjectAttachments(project.id)}
@@ -2076,7 +2156,7 @@ export default function ProjectsPage() {
                   </tr>
 
                   {/* Task Rows */}
-                  {project.expanded && project.tasks.map(task => (
+                  {project.expanded && project.tasks.map((task, taskIndex) => (
                     <tr key={task.id} className="bg-gray-50 border-b border-gray-200">
                       <td></td>
                       {columnOrder.map(colId => {
@@ -2179,14 +2259,13 @@ export default function ProjectsPage() {
                         if (colId === 'engineer') {
                           return (
                             <td key={colId} className="px-3 py-2">
-                              <select
+                              <input
+                                type="text"
                                 value={task.engineer || ''}
                                 onChange={(e) => updateTask(project.id, task.id, 'engineer', e.target.value)}
+                                placeholder="Введите имя"
                                 className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
-                              >
-                                <option value="">Не назначен</option>
-                                {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
-                              </select>
+                              />
                             </td>
                           );
                         }
@@ -2212,11 +2291,28 @@ export default function ProjectsPage() {
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
                           <button
+                            onClick={() => moveTask(project.id, task.id, -1)}
+                            disabled={taskIndex === 0}
+                            className="px-1 text-gray-500 hover:text-blue-700 disabled:opacity-25"
+                            title="Переместить задачу выше"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => moveTask(project.id, task.id, 1)}
+                            disabled={taskIndex === project.tasks.length - 1}
+                            className="px-1 text-gray-500 hover:text-blue-700 disabled:opacity-25"
+                            title="Переместить задачу ниже"
+                          >
+                            ↓
+                          </button>
+                          <button
                             onClick={() => setShowTaskComments({ projectId: project.id, taskId: task.id })}
-                            className="text-gray-600 hover:text-gray-800 text-sm px-1"
+                            className={`relative rounded px-1.5 py-1 text-sm ${task.comments?.length ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-300' : 'text-gray-600 hover:text-gray-800'}`}
                             title="Комментарии"
                           >
                             💬
+                            {!!task.comments?.length && <span className="ml-1 text-[10px] font-bold">{task.comments.length}</span>}
                           </button>
                           <button
                             onClick={() => setEditingTask({ projectId: project.id, task })}
@@ -2325,7 +2421,7 @@ export default function ProjectsPage() {
                   <option value="new">Новый</option>
                   <option value="progress">В работе</option>
                   <option value="waiting">Ожидание</option>
-                  <option value="blocked">Заблокирован</option>
+                  <option value="blocked">❄️ Заморожен</option>
                   <option value="done">Завершён</option>
                 </select>
               </div>
@@ -2340,10 +2436,7 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Инженер</label>
-                <select id="f_engineer" defaultValue={editingProject?.engineer || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
-                  <option value="">Не назначен</option>
-                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
-                </select>
+                <input id="f_engineer" defaultValue={editingProject?.engineer || ''} placeholder="Введите имя" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -2439,10 +2532,7 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Инженер</label>
-                <select id="t_engineer" defaultValue={editingTask.task.engineer || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
-                  <option value="">Не назначен</option>
-                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
-                </select>
+                <input id="t_engineer" defaultValue={editingTask.task.engineer || ''} placeholder="Введите имя" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -2459,7 +2549,7 @@ export default function ProjectsPage() {
                   const deadline = (document.getElementById('t_deadline') as HTMLInputElement).value;
                   const status = (document.getElementById('t_status') as HTMLSelectElement).value;
                   const responsible = (document.getElementById('t_responsible') as HTMLSelectElement).value;
-                  const engineer = (document.getElementById('t_engineer') as HTMLSelectElement).value;
+                  const engineer = (document.getElementById('t_engineer') as HTMLInputElement).value;
                   const updatedTask: Task = {
                     ...editingTask.task,
                     title,
@@ -2483,7 +2573,7 @@ export default function ProjectsPage() {
                     const savedTask = await response.json();
                     setProjects(current => current.map(project => project.id === editingTask.projectId ? {
                       ...project,
-                      tasks: project.tasks.map(task => task.id === editingTask.task.id ? savedTask : task),
+                      tasks: project.tasks.map(task => task.id === editingTask.task.id ? { ...savedTask, comments: task.comments } : task),
                     } : project));
                     setEditingTask(null);
                   } catch (error) {
@@ -2615,16 +2705,16 @@ export default function ProjectsPage() {
                           <span className="text-xs font-semibold text-gray-700">{comment.author}</span>
                           <span className="text-xs text-gray-400">{new Date(comment.date).toLocaleDateString('ru-RU')}</span>
                           <button
-                            onClick={() => {
-                              setProjects(projects.map(p => {
-                                if (p.id === showProjectComments) {
-                                  return {
-                                    ...p,
-                                    comments: p.comments?.filter((_, i) => i !== idx) || []
-                                  };
-                                }
-                                return p;
-                              }));
+                            onClick={async () => {
+                              try {
+                                await deleteComment(comment.id);
+                                setProjects(current => current.map(p => p.id === showProjectComments ? {
+                                  ...p,
+                                  comments: p.comments?.filter((_, i) => i !== idx) || [],
+                                } : p));
+                              } catch (error) {
+                                alert(error instanceof Error ? error.message : 'Не удалось удалить комментарий');
+                              }
                             }}
                             className="ml-auto text-red-600 hover:text-red-800 text-xs"
                             title="Удалить комментарий"
@@ -2656,27 +2746,15 @@ export default function ProjectsPage() {
                 Закрыть
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const text = (document.getElementById('new_project_comment') as HTMLTextAreaElement).value.trim();
                   if (!text) return;
-
-                  setProjects(projects.map(p => {
-                    if (p.id === showProjectComments) {
-                      return {
-                        ...p,
-                        comments: [
-                          ...(p.comments || []),
-                          {
-                            author: 'Вы',
-                            date: new Date().toISOString(),
-                            text
-                          }
-                        ]
-                      };
-                    }
-                    return p;
-                  }));
-                  (document.getElementById('new_project_comment') as HTMLTextAreaElement).value = '';
+                  try {
+                    await addProjectComment(showProjectComments, text);
+                    (document.getElementById('new_project_comment') as HTMLTextAreaElement).value = '';
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : 'Не удалось добавить комментарий');
+                  }
                 }}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
               >
@@ -2713,23 +2791,18 @@ export default function ProjectsPage() {
                           <span className="text-xs font-semibold text-gray-700">{comment.author}</span>
                           <span className="text-xs text-gray-400">{new Date(comment.date).toLocaleDateString('ru-RU')}</span>
                           <button
-                            onClick={() => {
-                              setProjects(projects.map(p => {
-                                if (p.id === showTaskComments.projectId) {
-                                  return {
-                                    ...p,
-                                    tasks: p.tasks.map(t =>
-                                      t.id === showTaskComments.taskId
-                                        ? {
-                                            ...t,
-                                            comments: t.comments?.filter((_, i) => i !== idx) || []
-                                          }
-                                        : t
-                                    )
-                                  };
-                                }
-                                return p;
-                              }));
+                            onClick={async () => {
+                              try {
+                                await deleteComment(comment.id);
+                                setProjects(current => current.map(p => p.id === showTaskComments.projectId ? {
+                                  ...p,
+                                  tasks: p.tasks.map(t => t.id === showTaskComments.taskId
+                                    ? { ...t, comments: t.comments?.filter((_, i) => i !== idx) || [] }
+                                    : t),
+                                } : p));
+                              } catch (error) {
+                                alert(error instanceof Error ? error.message : 'Не удалось удалить комментарий');
+                              }
                             }}
                             className="ml-auto text-red-600 hover:text-red-800 text-xs"
                             title="Удалить комментарий"
@@ -2761,34 +2834,15 @@ export default function ProjectsPage() {
                 Закрыть
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const text = (document.getElementById('new_comment') as HTMLTextAreaElement).value.trim();
                   if (!text) return;
-
-                  setProjects(projects.map(p => {
-                    if (p.id === showTaskComments.projectId) {
-                      return {
-                        ...p,
-                        tasks: p.tasks.map(t =>
-                          t.id === showTaskComments.taskId
-                            ? {
-                                ...t,
-                                comments: [
-                                  ...(t.comments || []),
-                                  {
-                                    author: 'Вы',
-                                    date: new Date().toISOString(),
-                                    text
-                                  }
-                                ]
-                              }
-                            : t
-                        )
-                      };
-                    }
-                    return p;
-                  }));
-                  (document.getElementById('new_comment') as HTMLTextAreaElement).value = '';
+                  try {
+                    await addTaskComment(showTaskComments.projectId, showTaskComments.taskId, text);
+                    (document.getElementById('new_comment') as HTMLTextAreaElement).value = '';
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : 'Не удалось добавить комментарий');
+                  }
                 }}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
               >

@@ -23,6 +23,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [sending, setSending] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -67,6 +68,41 @@ export default function AdminPage() {
     }
   };
 
+  const renameUser = async (user: RegisteredUser) => {
+    const name = prompt('Новое имя пользователя:', user.name)?.trim();
+    if (!name || name === user.name) return;
+    const response = await fetch(`/api/admin/users/${user.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await response.json();
+    if (!response.ok) return alert(data.error || 'Не удалось переименовать пользователя');
+    await loadUsers();
+  };
+
+  const deleteUser = async (user: RegisteredUser) => {
+    if (!confirm(`Удалить пользователя ${user.name} (${user.email})? Проекты пользователя сохранятся.`)) return;
+    const response = await fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) return alert(data.error || 'Не удалось удалить пользователя');
+    await loadUsers();
+  };
+
+  const testEmail = async () => {
+    setTestingEmail(true);
+    try {
+      const response = await fetch('/api/admin/email-test', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Ошибка отправки');
+      alert(`Тестовое письмо отправлено на ${data.email}`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка отправки');
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -74,9 +110,14 @@ export default function AdminPage() {
           <h1 className="text-2xl font-bold text-gray-900">Пользователи</h1>
           <p className="mt-1 text-sm text-gray-500">Все зарегистрированные аккаунты системы</p>
         </div>
-        <button onClick={() => setShowInviteForm(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-          Пригласить пользователя
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={testEmail} disabled={testingEmail} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50">
+            {testingEmail ? 'Проверка...' : 'Проверить email'}
+          </button>
+          <button onClick={() => setShowInviteForm(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+            Пригласить пользователя
+          </button>
+        </div>
       </div>
 
       <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
@@ -94,11 +135,15 @@ export default function AdminPage() {
                   <div className="text-sm text-gray-500">{user.email}</div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <span className={`rounded-full px-2 py-1 ${user.isBlocked ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                    {user.isBlocked ? 'Заблокирован' : 'Активен'}
+                  <span className={`rounded-full px-2 py-1 ${user.isBlocked ? 'bg-sky-100 text-sky-700' : 'bg-green-100 text-green-700'}`}>
+                    {user.isBlocked ? '❄️ Заморожен' : 'Активен'}
                   </span>
                   <span className="text-gray-500">{user.email.toLowerCase() === ADMIN_EMAIL ? 'Администратор' : 'Пользователь'}</span>
                   <span className="text-gray-400">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</span>
+                  <button onClick={() => renameUser(user)} className="rounded border px-2 py-1 text-gray-600 hover:bg-gray-50">Переименовать</button>
+                  {user.email.toLowerCase() !== ADMIN_EMAIL && (
+                    <button onClick={() => deleteUser(user)} className="rounded border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50">Удалить</button>
+                  )}
                 </div>
               </div>
             ))}

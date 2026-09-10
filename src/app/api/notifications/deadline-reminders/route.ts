@@ -2,16 +2,17 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendEmail, emailTemplates } from '@/lib/email';
 
-// Этот endpoint можно вызывать через cron (например, раз в день в 9:00)
-export async function POST(request: Request) {
+// Vercel Cron вызывает endpoint методом GET. POST оставлен для ручной проверки.
+async function sendDeadlineReminders(request: Request) {
   try {
     // Проверяем секретный ключ для защиты endpoint
     const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
     const threeDaysLater = new Date(today);
     threeDaysLater.setDate(today.getDate() + 3);
     const oneDayLater = new Date(today);
@@ -20,9 +21,8 @@ export async function POST(request: Request) {
     // Находим проекты с дедлайнами через 3 дня или 1 день
     const projects = await prisma.project.findMany({
       where: {
-        status: {
-          not: 'completed',
-        },
+        status: { notIn: ['done', 'blocked'] },
+        deletedAt: null,
         deadline: {
           in: [
             threeDaysLater.toISOString().split('T')[0],
@@ -30,28 +30,11 @@ export async function POST(request: Request) {
           ],
         },
       },
-      include: {
-        User: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            notificationSettings: true,
-          },
-        },
-        ProjectMember: {
-          include: {
-            User: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                notificationSettings: true,
-              },
-            },
-          },
-        },
-      },
+    });
+
+    const recipients = await prisma.user.findMany({
+      where: { status: 'active', isBlocked: false, emailVerified: true },
+      select: { email: true, notificationSettings: true },
     });
 
     const notifications = [];
@@ -60,25 +43,18 @@ export async function POST(request: Request) {
       const deadline = new Date(project.deadline);
       const daysLeft = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-      // Собираем всех получателей (владелец + участники)
-      const recipients = [project.User];
-      project.ProjectMember.forEach(member => {
-        recipients.push(member.User);
-      });
-
-      // Отправляем уведомления
+      // Проекты общие, поэтому уведомляем всех активных пользователей,
+      // которые не отключили напоминания о дедлайнах.
       for (const recipient of recipients) {
-        if (!recipient) continue;
-
         const userSettings = recipient.notificationSettings as any;
-        const shouldNotify = !userSettings || userSettings.deadlineReminders !== false;
+        const shouldNotify = !userSettings || userSettings.emailOnDeadline !== false;
 
         if (shouldNotify) {
           const emailData = emailTemplates.deadlineReminder({
             projectName: project.name,
             deadline: project.deadline,
             daysLeft,
-            projectUrl: `${process.env.APP_URL}/projects?project=${project.id}`,
+            projectUrl: `${process.env.APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/projects?project=${project.id}`,
           });
 
           let sent = false;
@@ -116,4 +92,12 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function GET(request: Request) {
+  return sendDeadlineReminders(request);
+}
+
+export async function POST(request: Request) {
+  return sendDeadlineReminders(request);
 }

@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight, Moon, Sun } from 'lucide-react';
 import { ReactNode } from 'react';
 import { isAdminEmail } from '@/lib/admin';
 
@@ -13,6 +13,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [darkTheme, setDarkTheme] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -41,11 +42,27 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme');
+    const enabled = savedTheme
+      ? savedTheme === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setDarkTheme(enabled);
+    document.documentElement.classList.toggle('dark', enabled);
+  }, []);
+
   // Save sidebar state to localStorage
   const toggleSidebar = () => {
     const newState = !sidebarCollapsed;
     setSidebarCollapsed(newState);
     localStorage.setItem('sidebarCollapsed', String(newState));
+  };
+
+  const toggleTheme = () => {
+    const enabled = !darkTheme;
+    setDarkTheme(enabled);
+    localStorage.setItem('theme', enabled ? 'dark' : 'light');
+    document.documentElement.classList.toggle('dark', enabled);
   };
 
   if (loading) {
@@ -101,6 +118,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
             {/* User Menu */}
             <div className="flex items-center space-x-2 sm:space-x-4">
+              <button
+                onClick={toggleTheme}
+                className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
+                title={darkTheme ? 'Включить светлую тему' : 'Включить тёмную тему'}
+                aria-label={darkTheme ? 'Включить светлую тему' : 'Включить тёмную тему'}
+              >
+                {darkTheme ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
               <span className="text-sm text-gray-700 hidden sm:block truncate max-w-[150px]">
                 {session.user?.name || session.user?.email}
               </span>

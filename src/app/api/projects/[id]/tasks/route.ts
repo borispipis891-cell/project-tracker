@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { getUserProjectRole } from '@/lib/project-permissions';
+import { emailTemplates, sendEmail } from '@/lib/email';
 
 export async function POST(
   request: Request,
@@ -53,6 +54,32 @@ export async function POST(
     ]);
     console.log(`[Task Create] DB write: ${Date.now() - t1}ms`);
     console.log(`[Task Create] Total: ${Date.now() - startTime}ms`);
+
+    try {
+      if (task.responsible) {
+        const [project, responsibleUser] = await Promise.all([
+          prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
+          prisma.user.findFirst({
+            where: { name: task.responsible, status: 'active', isBlocked: false },
+            select: { email: true },
+          }),
+        ]);
+
+        if (project && responsibleUser) {
+          const emailData = emailTemplates.taskAssignment({
+            projectName: project.name,
+            taskTitle: task.title,
+            deadline: task.deadline || undefined,
+            assignedBy: userName,
+            projectUrl: `${process.env.APP_URL || process.env.NEXTAUTH_URL || ''}/projects?project=${projectId}`,
+          });
+
+          await sendEmail({ to: responsibleUser.email, ...emailData });
+        }
+      }
+    } catch (emailError) {
+      console.error('[TASK_ASSIGNMENT_EMAIL] Failed:', emailError);
+    }
 
     return NextResponse.json(task);
   } catch (error) {

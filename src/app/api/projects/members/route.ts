@@ -36,7 +36,6 @@ export async function GET(request: Request) {
             id: true,
             name: true,
             email: true,
-            avatar: true,
           },
         },
         ProjectMember: {
@@ -46,7 +45,6 @@ export async function GET(request: Request) {
                 id: true,
                 name: true,
                 email: true,
-                avatar: true,
               },
             },
           },
@@ -64,7 +62,7 @@ export async function GET(request: Request) {
       userId: m.User.id,
       name: m.User.name,
       email: m.User.email,
-      avatar: m.User.avatar,
+      avatar: null,
       role: m.role,
       addedAt: m.createdAt,
     }));

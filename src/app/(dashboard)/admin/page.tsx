@@ -168,7 +168,7 @@ export default function AdminPage() {
       </section>
 
       {showInviteForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 p-5" onClick={() => setShowInviteForm(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 p-5">
           <form className="w-full max-w-md rounded-lg bg-white p-6" onSubmit={inviteUser} onClick={event => event.stopPropagation()}>
             <h2 className="mb-4 text-lg font-semibold">Пригласить пользователя</h2>
             <label className="mb-3 block text-sm font-medium text-gray-700">

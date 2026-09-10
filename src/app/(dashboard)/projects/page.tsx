@@ -2367,10 +2367,6 @@ export default function ProjectsPage() {
       {showModal && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => {
-            setShowModal(false);
-            setEditingProject(null);
-          }}
         >
           <div
             className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-auto p-6"
@@ -2493,7 +2489,6 @@ export default function ProjectsPage() {
       {editingTask && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setEditingTask(null)}
         >
           <div
             className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-auto p-6"
@@ -2593,7 +2588,6 @@ export default function ProjectsPage() {
       {showMembersModal && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setShowMembersModal(null)}
         >
           <div
             className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
@@ -2684,7 +2678,6 @@ export default function ProjectsPage() {
       {showProjectComments && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setShowProjectComments(null)}
         >
           <div
             className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
@@ -2769,7 +2762,6 @@ export default function ProjectsPage() {
       {showTaskComments && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setShowTaskComments(null)}
         >
           <div
             className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
@@ -2857,7 +2849,6 @@ export default function ProjectsPage() {
       {showProjectHistory && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setShowProjectHistory(null)}
         >
           <div
             className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
@@ -2908,7 +2899,6 @@ export default function ProjectsPage() {
       {showProjectAttachments && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setShowProjectAttachments(null)}
         >
           <div
             className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"

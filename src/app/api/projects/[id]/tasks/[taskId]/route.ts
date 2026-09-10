@@ -3,6 +3,16 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { getUserProjectRole } from '@/lib/project-permissions';
+import { emailTemplates, sendEmail } from '@/lib/email';
+
+const appUrl = () => process.env.APP_URL || process.env.NEXTAUTH_URL || '';
+
+const escapeHtml = (value: string) => value
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#039;');
 
 export async function PUT(
   request: Request,
@@ -46,37 +56,68 @@ export async function PUT(
       );
     }
 
+    if (oldTask.projectId !== projectId) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true },
+    });
+
+    if (!project) {
+      return NextResponse.json({ error: 'Проект не найден' }, { status: 404 });
+    }
+
     const task = await prisma.task.update({
       where: { id: taskId },
       data: {
-        title: body.title,
-        status: body.status,
-        receivedAt: body.receivedAt,
-        deadline: body.deadline,
-        completedAt: body.completedAt,
-        responsible: body.responsible,
-        engineer: body.engineer,
-        customFields: body.customFields,
+        title: body.title ?? oldTask.title,
+        description: body.description ?? oldTask.description,
+        status: body.status ?? oldTask.status,
+        priority: body.priority ?? oldTask.priority,
+        receivedAt: body.receivedAt ?? oldTask.receivedAt,
+        deadline: body.deadline ?? oldTask.deadline,
+        dueDate: body.dueDate ?? body.deadline ?? oldTask.dueDate,
+        completedAt: body.completedAt || null,
+        responsible: body.responsible || null,
+        engineer: body.engineer || null,
+        customFields: body.customFields ?? oldTask.customFields,
       },
     });
 
     // Detect changes and create history entries
     const changes: string[] = [];
 
-    if (oldTask.title !== body.title) {
-      changes.push(`название с "${oldTask.title}" на "${body.title}"`);
+    if (oldTask.title !== task.title) {
+      changes.push(`название с "${oldTask.title}" на "${task.title}"`);
     }
-    if (oldTask.status !== body.status) {
-      changes.push(`статус с "${oldTask.status}" на "${body.status}"`);
+    if (oldTask.status !== task.status) {
+      changes.push(`статус с "${oldTask.status}" на "${task.status}"`);
     }
-    if (oldTask.deadline !== body.deadline) {
-      changes.push(`дедлайн с "${oldTask.deadline}" на "${body.deadline}"`);
+    if (oldTask.priority !== task.priority) {
+      changes.push(`приоритет с "${oldTask.priority}" на "${task.priority}"`);
     }
-    if (oldTask.responsible !== body.responsible) {
-      changes.push(`ответственного с "${oldTask.responsible || '—'}" на "${body.responsible || '—'}"`);
+    if (oldTask.deadline !== task.deadline) {
+      changes.push(`дедлайн с "${oldTask.deadline}" на "${task.deadline}"`);
     }
-    if (oldTask.engineer !== body.engineer) {
-      changes.push(`инженера с "${oldTask.engineer || '—'}" на "${body.engineer || '—'}"`);
+    if (oldTask.responsible !== task.responsible) {
+      changes.push(`ответственного с "${oldTask.responsible || '—'}" на "${task.responsible || '—'}"`);
+    }
+    if (oldTask.engineer !== task.engineer) {
+      changes.push(`инженера с "${oldTask.engineer || '—'}" на "${task.engineer || '—'}"`);
+    }
+    if (oldTask.receivedAt !== task.receivedAt) {
+      changes.push(`дату поступления с "${oldTask.receivedAt}" на "${task.receivedAt}"`);
+    }
+    if (oldTask.completedAt !== task.completedAt) {
+      changes.push(`дату завершения с "${oldTask.completedAt || '—'}" на "${task.completedAt || '—'}"`);
+    }
+    if (oldTask.description !== task.description) {
+      changes.push('описание задачи');
+    }
+    if (JSON.stringify(oldTask.customFields) !== JSON.stringify(task.customFields)) {
+      changes.push('дополнительные поля');
     }
 
     if (changes.length > 0) {
@@ -86,9 +127,51 @@ export async function PUT(
           date: new Date().toISOString(),
           user: currentUser.name || currentUser.email,
           action: 'Изменена задача',
-          details: `"${body.title}": ${changes.join(', ')}`,
+          details: `"${task.title}": ${changes.join(', ')}`,
         },
       });
+
+      if (task.responsible) {
+        try {
+          const responsibleUser = await prisma.user.findFirst({
+            where: {
+              name: task.responsible,
+              status: 'active',
+              isBlocked: false,
+            },
+            select: { email: true },
+          });
+
+          if (responsibleUser) {
+            const responsibleChanged = oldTask.responsible !== task.responsible;
+            const projectUrl = `${appUrl()}/projects?project=${projectId}`;
+            const emailData = responsibleChanged
+              ? emailTemplates.taskAssignment({
+                  projectName: escapeHtml(project.name),
+                  taskTitle: escapeHtml(task.title),
+                  deadline: task.deadline ? escapeHtml(task.deadline) : undefined,
+                  assignedBy: escapeHtml(currentUser.name || currentUser.email),
+                  projectUrl,
+                })
+              : emailTemplates.taskUpdate({
+                  projectName: escapeHtml(project.name),
+                  taskTitle: escapeHtml(task.title),
+                  changes: changes.map(change => escapeHtml(change)).join('<br>'),
+                  updatedBy: escapeHtml(currentUser.name || currentUser.email),
+                  projectUrl,
+                });
+
+            await sendEmail({
+              to: responsibleUser.email,
+              subject: emailData.subject,
+              html: emailData.html,
+            });
+          }
+        } catch (emailError) {
+            // Сохранение задачи важнее доставки письма: SMTP может быть временно недоступен.
+            console.error('[TASK_EMAIL] Failed:', emailError);
+        }
+      }
     }
 
     return NextResponse.json(task);

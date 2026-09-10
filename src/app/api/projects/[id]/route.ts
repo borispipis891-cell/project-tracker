@@ -206,42 +206,48 @@ export async function PUT(
         },
       });
 
-      // Отправляем уведомления участникам проекта
-      const members = await prisma.projectMember.findMany({
-        where: { projectId },
-        include: {
-          User: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              notificationSettings: true,
+      try {
+        // Почтовые уведомления не являются частью сохранения проекта.
+        const members = await prisma.projectMember.findMany({
+          where: { projectId },
+          include: {
+            User: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                notificationSettings: true,
+              },
             },
           },
-        },
-      });
+        });
 
-      // Отправляем email всем участникам (кроме текущего пользователя)
-      for (const member of members) {
-        if (member.userId !== currentUser.id) {
-          const userSettings = member.User.notificationSettings as any;
-          const shouldNotify = !userSettings || userSettings.projectUpdates !== false;
+        // Отправляем email всем участникам (кроме текущего пользователя)
+        for (const member of members) {
+          if (member.userId !== currentUser.id) {
+            const userSettings = member.User.notificationSettings as any;
+            const shouldNotify = !userSettings || userSettings.projectUpdates !== false;
 
-          if (shouldNotify) {
-            const emailData = emailTemplates.projectUpdate({
-              projectName: project.name,
-              changes: changes.map(c => `Изменено ${c}`).join('<br>'),
-              updatedBy: currentUser.name || currentUser.email,
-              projectUrl: `${process.env.APP_URL}/projects?project=${projectId}`,
-            });
+            if (shouldNotify) {
+              const emailData = emailTemplates.projectUpdate({
+                projectName: project.name,
+                changes: changes.map(c => `Изменено ${c}`).join('<br>'),
+                updatedBy: currentUser.name || currentUser.email,
+                projectUrl: `${process.env.APP_URL}/projects?project=${projectId}`,
+              });
 
-            await sendEmail({
-              to: member.User.email,
-              subject: emailData.subject,
-              html: emailData.html,
-            });
+              await sendEmail({
+                to: member.User.email,
+                subject: emailData.subject,
+                html: emailData.html,
+              });
+            }
           }
         }
+      } catch (emailError) {
+        // Изменение уже сохранено. Проблема SMTP не должна превращать
+        // успешное обновление проекта (например, тегов) в ошибку для UI.
+        console.error('[PROJECT_UPDATE_EMAIL] Failed:', emailError);
       }
     }
 

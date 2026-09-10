@@ -76,6 +76,29 @@ export const emailTemplates = {
       </div>
     `,
   }),
+  taskAssignment: (data: { projectName: string; taskTitle: string; deadline?: string; assignedBy: string; projectUrl?: string }) => ({
+    subject: `Вы назначены ответственным — ${data.taskTitle}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Вы назначены ответственным за задачу</h2>
+        <p><strong>${data.assignedBy}</strong> назначил вас ответственным за задачу <strong>${data.taskTitle}</strong>.</p>
+        <p>Проект: <strong>${data.projectName}</strong></p>
+        ${data.deadline ? `<p>Дедлайн: <strong>${data.deadline}</strong></p>` : ''}
+        ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Открыть проект</a>` : ''}
+      </div>
+    `,
+  }),
+  taskUpdate: (data: { projectName: string; taskTitle: string; changes: string; updatedBy: string; projectUrl?: string }) => ({
+    subject: `Изменение задачи — ${data.taskTitle}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Задача обновлена</h2>
+        <p><strong>${data.updatedBy}</strong> изменил задачу <strong>${data.taskTitle}</strong> в проекте <strong>${data.projectName}</strong>.</p>
+        <div style="background-color: #f3f4f6; padding: 12px; border-radius: 6px; margin: 16px 0;">${data.changes}</div>
+        ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Открыть проект</a>` : ''}
+      </div>
+    `,
+  }),
 };
 
 export async function sendVerificationEmail(email: string, verifyUrl: string) {

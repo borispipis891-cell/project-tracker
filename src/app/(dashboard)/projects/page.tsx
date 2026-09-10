@@ -235,10 +235,6 @@ export default function ProjectsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showMembersModal, setShowMembersModal] = useState<number | null>(null);
-  const [projectMembers, setProjectMembers] = useState<any[]>([]);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('viewer');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -780,13 +776,27 @@ export default function ProjectsPage() {
     }));
   };
 
-  const updateProject = async (id: number, field: keyof Project, value: any) => {
+  const updateProject = async (
+    id: number,
+    field: keyof Project,
+    value: any,
+    responsibleUserId?: string,
+  ) => {
     const project = projects.find(p => p.id === id);
     const oldValue = project?.[field];
 
     let updated = projects.map(p => {
       if (p.id === id) {
-        const updatedProject = { ...p, [field]: value };
+        const updatedProject = {
+          ...p,
+          [field]: value,
+          ...(field === 'responsible' ? {
+            customFields: {
+              ...(p.customFields || {}),
+              __responsibleUserId: responsibleUserId || '',
+            },
+          } : {}),
+        };
 
         // Auto-set completedAt when status changes to 'done'
         if (field === 'status' && value === 'done' && !p.completedAt) {
@@ -1138,74 +1148,6 @@ export default function ProjectsPage() {
     }));
   };
 
-  // Функции для работы с участниками проекта
-  const loadProjectMembers = async (projectId: number) => {
-    try {
-      const response = await fetch(`/api/projects/${projectId}/members`);
-      if (response.ok) {
-        const members = await response.json();
-        setProjectMembers(members);
-      }
-    } catch (error) {
-      console.error('Failed to load members:', error);
-    }
-  };
-
-  const inviteMember = async (projectId: number) => {
-    if (!inviteEmail.trim()) {
-      alert('Введите email пользователя');
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/projects/${projectId}/members`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: inviteEmail.trim(),
-          role: inviteRole,
-        }),
-      });
-
-      if (response.ok) {
-        alert('Приглашение отправлено!');
-        setInviteEmail('');
-        setInviteRole('viewer');
-        loadProjectMembers(projectId);
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Ошибка при отправке приглашения');
-      }
-    } catch (error) {
-      console.error('Failed to invite member:', error);
-      alert('Ошибка при отправке приглашения');
-    }
-  };
-
-  const removeMember = async (projectId: number, userId: string) => {
-    if (!confirm('Удалить участника из проекта?')) return;
-
-    try {
-      const response = await fetch(`/api/projects/${projectId}/members?userId=${userId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        loadProjectMembers(projectId);
-      } else {
-        alert('Ошибка при удалении участника');
-      }
-    } catch (error) {
-      console.error('Failed to remove member:', error);
-      alert('Ошибка при удалении участника');
-    }
-  };
-
-  const openMembersModal = (projectId: number) => {
-    setShowMembersModal(projectId);
-    loadProjectMembers(projectId);
-  };
-
   const createProject = async () => {
     const name = (document.getElementById('f_name') as HTMLInputElement).value.trim();
     if (!name) {
@@ -1222,10 +1164,14 @@ export default function ProjectsPage() {
       reg: (document.getElementById('f_reg') as HTMLInputElement).value,
       status: (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus,
       priority: (document.getElementById('f_priority') as HTMLSelectElement).value as Priority,
-      responsible: (document.getElementById('f_responsible') as HTMLSelectElement).value,
+      responsible: registeredUsers.find(user => user.id === (document.getElementById('f_responsible') as HTMLSelectElement).value)?.name || '',
       engineer: (document.getElementById('f_engineer') as HTMLInputElement).value,
       color: editingProject?.color || newProjectColor,
       tags: editingProject?.tags || newProjectTags,
+      customFields: {
+        ...(editingProject?.customFields || {}),
+        __responsibleUserId: (document.getElementById('f_responsible') as HTMLSelectElement).value,
+      },
     };
 
     try {
@@ -2068,12 +2014,15 @@ export default function ProjectsPage() {
                         return (
                           <td key={colId} className="px-3 py-2">
                             <select
-                              value={project.responsible}
-                              onChange={(e) => updateProject(project.id, 'responsible', e.target.value)}
+                              value={project.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === project.responsible)?.id || ''}
+                              onChange={(e) => {
+                                const user = registeredUsers.find(item => item.id === e.target.value);
+                                updateProject(project.id, 'responsible', user?.name || '', e.target.value);
+                              }}
                               className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
                             >
                               <option value="">Не назначен</option>
-                              {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
+                              {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
                             </select>
                           </td>
                         );
@@ -2147,15 +2096,6 @@ export default function ProjectsPage() {
                             >
                               ✎
                             </button>
-                            {permissions.canInvite && (
-                              <button
-                                onClick={() => openMembersModal(project.id)}
-                                className="text-purple-600 hover:text-purple-800 text-sm px-1"
-                                title="Управление участниками"
-                              >
-                                👥
-                              </button>
-                            )}
                           </>
                         )}
                         {permissions.canDelete && (
@@ -2444,9 +2384,9 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
-                <select id="f_responsible" defaultValue={editingProject?.responsible || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                <select id="f_responsible" defaultValue={editingProject?.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === editingProject?.responsible)?.id || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
                   <option value="">Не назначен</option>
-                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
+                  {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
                 </select>
               </div>
               <div>
@@ -2602,96 +2542,6 @@ export default function ProjectsPage() {
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
               >
                 Сохранить
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Members Management Modal */}
-      {showMembersModal && (
-        <div
-          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-        >
-          <div
-            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-base font-semibold mb-4">Участники проекта</h2>
-
-            {/* Current Members List */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-3">Текущие участники</h3>
-              {projectMembers.length === 0 ? (
-                <p className="text-sm text-gray-500">Участников пока нет</p>
-              ) : (
-                <div className="space-y-2">
-                  {projectMembers.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                      <div>
-                        <div className="text-sm font-medium">{member.user.name || member.user.email}</div>
-                        <div className="text-xs text-gray-500">
-                          {member.role === 'editor' ? '🔧 Редактор' : '👁️ Наблюдатель'}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => removeMember(showMembersModal, member.userId)}
-                        className="text-red-600 hover:text-red-800 text-sm px-2 py-1"
-                        title="Удалить участника"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Invite New Member */}
-            <div className="border-t pt-4">
-              <h3 className="text-sm font-medium mb-3">Пригласить участника</h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Email пользователя</label>
-                  <input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="user@example.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Роль</label>
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value as 'editor' | 'viewer')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600"
-                  >
-                    <option value="viewer">👁️ Наблюдатель (только просмотр)</option>
-                    <option value="editor">🔧 Редактор (может редактировать)</option>
-                  </select>
-                </div>
-                <button
-                  onClick={() => inviteMember(showMembersModal)}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-                >
-                  Отправить приглашение
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-              <button
-                onClick={() => {
-                  setShowMembersModal(null);
-                  setInviteEmail('');
-                  setInviteRole('viewer');
-                  setProjectMembers([]);
-                }}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md text-sm"
-              >
-                Закрыть
               </button>
             </div>
           </div>

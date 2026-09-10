@@ -348,7 +348,7 @@ export default function SettingsPage() {
                 />
                 <div>
                   <div className="font-medium text-gray-900">Изменения в проектах</div>
-                  <div className="text-sm text-gray-500">Получать email при изменении проектов, где вы участник</div>
+                  <div className="text-sm text-gray-500">Получать email при изменении проектов, где вы назначены ответственным</div>
                 </div>
               </label>
             </div>

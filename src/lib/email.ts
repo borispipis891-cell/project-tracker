@@ -79,6 +79,17 @@ export const emailTemplates = {
       </div>
     `,
   }),
+  projectAssignment: (data: { projectName: string; deadline?: string; assignedBy: string; projectUrl?: string }) => ({
+    subject: `Вы назначены ответственным — ${data.projectName}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Вы назначены ответственным за проект</h2>
+        <p><strong>${data.assignedBy}</strong> назначил вас ответственным за проект <strong>${data.projectName}</strong>.</p>
+        ${data.deadline ? `<p>Дедлайн: <strong>${data.deadline}</strong></p>` : ''}
+        ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Открыть проект</a>` : ''}
+      </div>
+    `,
+  }),
   taskAssignment: (data: { projectName: string; taskTitle: string; deadline?: string; assignedBy: string; projectUrl?: string }) => ({
     subject: `Вы назначены ответственным — ${data.taskTitle}`,
     html: `

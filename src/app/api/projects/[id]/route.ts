@@ -6,6 +6,19 @@ import { getUserProjectRole } from '@/lib/project-permissions';
 import { sendEmail, emailTemplates } from '@/lib/email';
 import { isAdminEmail } from '@/lib/admin';
 
+const responsibleUserIdFrom = (customFields: unknown) => {
+  if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
+  const value = (customFields as Record<string, unknown>).__responsibleUserId;
+  return typeof value === 'string' && value ? value : null;
+};
+
+const escapeHtml = (value: string) => value
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#039;');
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -180,7 +193,9 @@ export async function PUT(
     if (oldProject.deadline !== body.deadline) {
       changes.push(`дедлайн с "${oldProject.deadline}" на "${body.deadline}"`);
     }
-    if (oldProject.responsible !== body.responsible) {
+    const responsibleChanged = oldProject.responsible !== project.responsible
+      || responsibleUserIdFrom(oldProject.customFields) !== responsibleUserIdFrom(project.customFields);
+    if (responsibleChanged) {
       changes.push(`ответственного с "${oldProject.responsible}" на "${body.responsible}"`);
     }
     if (oldProject.engineer !== body.engineer) {
@@ -208,43 +223,35 @@ export async function PUT(
       });
 
       try {
-        // Почтовые уведомления не являются частью сохранения проекта.
-        const members = await prisma.projectMember.findMany({
-          where: { projectId },
-          select: {
-            userId: true,
-            User: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                notificationSettings: true,
+        const responsibleUserId = responsibleUserIdFrom(project.customFields);
+        const responsibleUser = project.responsible
+          ? await prisma.user.findFirst({
+              where: {
+                ...(responsibleUserId ? { id: responsibleUserId } : { name: project.responsible }),
+                status: 'active',
+                isBlocked: false,
               },
-            },
-          },
-        });
+              select: { email: true },
+            })
+          : null;
 
-        // Отправляем email всем участникам (кроме текущего пользователя)
-        for (const member of members) {
-          if (member.userId !== currentUser.id) {
-            const userSettings = member.User.notificationSettings as any;
-            const shouldNotify = !userSettings || userSettings.emailOnProjectChange !== false;
-
-            if (shouldNotify) {
-              const emailData = emailTemplates.projectUpdate({
-                projectName: project.name,
-                changes: changes.map(c => `Изменено ${c}`).join('<br>'),
-                updatedBy: currentUser.name || currentUser.email,
-                projectUrl: `${process.env.APP_URL}/projects?project=${projectId}`,
+        if (responsibleUser) {
+          const projectUrl = `${process.env.APP_URL || process.env.NEXTAUTH_URL || ''}/projects?project=${projectId}`;
+          const emailData = responsibleChanged
+            ? emailTemplates.projectAssignment({
+                projectName: escapeHtml(project.name),
+                deadline: project.deadline ? escapeHtml(project.deadline) : undefined,
+                assignedBy: escapeHtml(currentUser.name || currentUser.email),
+                projectUrl,
+              })
+            : emailTemplates.projectUpdate({
+                projectName: escapeHtml(project.name),
+                changes: changes.map(change => `Изменено ${escapeHtml(change)}`).join('<br>'),
+                updatedBy: escapeHtml(currentUser.name || currentUser.email),
+                projectUrl,
               });
 
-              await sendEmail({
-                to: member.User.email,
-                subject: emailData.subject,
-                html: emailData.html,
-              });
-            }
-          }
+          await sendEmail({ to: responsibleUser.email, ...emailData });
         }
       } catch (emailError) {
         // Изменение уже сохранено. Проблема SMTP не должна превращать

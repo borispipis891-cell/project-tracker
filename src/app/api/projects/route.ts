@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
+import { emailTemplates, sendEmail } from '@/lib/email';
+
+const responsibleUserIdFrom = (customFields: unknown) => {
+  if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
+  const value = (customFields as Record<string, unknown>).__responsibleUserId;
+  return typeof value === 'string' && value ? value : null;
+};
 
 export async function GET() {
   try {
@@ -164,6 +171,32 @@ export async function POST(request: Request) {
         details: `"${body.name}"`,
       },
     });
+
+    if (project.responsible) {
+      try {
+        const responsibleUserId = responsibleUserIdFrom(project.customFields);
+        const responsibleUser = await prisma.user.findFirst({
+          where: {
+            ...(responsibleUserId ? { id: responsibleUserId } : { name: project.responsible }),
+            status: 'active',
+            isBlocked: false,
+          },
+          select: { email: true },
+        });
+
+        if (responsibleUser) {
+          const emailData = emailTemplates.projectAssignment({
+            projectName: project.name,
+            deadline: project.deadline || undefined,
+            assignedBy: currentUser.name || currentUser.email,
+            projectUrl: `${process.env.APP_URL || process.env.NEXTAUTH_URL || ''}/projects?project=${project.id}`,
+          });
+          await sendEmail({ to: responsibleUser.email, ...emailData });
+        }
+      } catch (emailError) {
+        console.error('[PROJECT_ASSIGNMENT_EMAIL] Failed:', emailError);
+      }
+    }
 
     return NextResponse.json({
       ...project,

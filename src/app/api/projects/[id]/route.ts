@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { getUserProjectRole } from '@/lib/project-permissions';
 import { sendEmail, emailTemplates } from '@/lib/email';
+import { isAdminEmail } from '@/lib/admin';
 
 export async function GET(
   request: Request,
@@ -227,7 +228,7 @@ export async function PUT(
         for (const member of members) {
           if (member.userId !== currentUser.id) {
             const userSettings = member.User.notificationSettings as any;
-            const shouldNotify = !userSettings || userSettings.projectUpdates !== false;
+            const shouldNotify = !userSettings || userSettings.emailOnProjectChange !== false;
 
             if (shouldNotify) {
               const emailData = emailTemplates.projectUpdate({
@@ -290,14 +291,17 @@ export async function DELETE(
 
     const projectId = parseInt(params.id);
 
-    // Check delete access (only owner)
-    const permissions = await getUserProjectRole(currentUser.id, projectId);
-    if (!permissions?.canDelete) {
-      return NextResponse.json({ error: 'Доступ запрещен. Только владелец может удалить проект' }, { status: 403 });
+    // Удаление проектов доступно только системному администратору.
+    if (!isAdminEmail(currentUser.email)) {
+      return NextResponse.json({ error: 'Удалять проекты может только администратор' }, { status: 403 });
     }
 
-    await prisma.project.delete({
+    // Мягкое удаление не зависит от внешних ключей старой production-схемы
+    // и позволяет восстановить данные при случайном действии.
+    await prisma.project.update({
       where: { id: projectId },
+      data: { deletedAt: new Date() },
+      select: { id: true },
     });
 
     return NextResponse.json({ success: true });

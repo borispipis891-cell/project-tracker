@@ -1000,7 +1000,8 @@ export default function ProjectsPage() {
       if (response.ok) {
         setProjects(projects.filter(p => p.id !== id));
       } else {
-        alert('Ошибка удаления проекта');
+        const error = await response.json().catch(() => null);
+        alert(error?.error || 'Ошибка удаления проекта');
       }
     } catch (error) {
       console.error('Failed to delete project:', error);

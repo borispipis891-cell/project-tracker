@@ -232,7 +232,7 @@ export async function POST(
 
     // Проверяем настройки уведомлений пользователя
     const userSettings = invitedUser.notificationSettings as any;
-    const shouldNotify = !userSettings || userSettings.projectInvites !== false;
+    const shouldNotify = !userSettings || userSettings.emailOnInvite !== false;
 
     // Отправляем email уведомление
     if (shouldNotify) {

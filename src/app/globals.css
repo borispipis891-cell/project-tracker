@@ -133,6 +133,175 @@ body {
   background-color: #415478;
 }
 
+/* Контрастные дедлайны, приоритеты и статусы в таблице */
+.deadline-highlight {
+  border: 1px solid var(--deadline-border);
+  background-color: var(--deadline-bg);
+  color: var(--deadline-text);
+}
+
+.deadline-overdue {
+  --deadline-border: #fecaca;
+  --deadline-bg: #fef2f2;
+  --deadline-text: #b91c1c;
+}
+
+.deadline-soon {
+  --deadline-border: #fde68a;
+  --deadline-bg: #fffbeb;
+  --deadline-text: #92400e;
+}
+
+.deadline-highlight input.deadline-input,
+.deadline-highlight input.deadline-input:hover,
+.deadline-highlight input.deadline-input:focus {
+  border-color: transparent;
+  background-color: transparent;
+  color: inherit;
+}
+
+.priority-control {
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--priority-border, transparent);
+  border-radius: 9999px;
+  background-color: var(--priority-bg, transparent);
+  color: var(--priority-text);
+  padding: 0.125rem 0.375rem 0.125rem 0.25rem;
+}
+
+.priority-critical { --priority-text: #dc2626; }
+.priority-high { --priority-text: #ea580c; }
+.priority-medium { --priority-text: #a16207; }
+.priority-low { --priority-text: #15803d; }
+
+.priority-control .priority-select {
+  min-width: 0;
+  background-color: transparent;
+  color: inherit;
+}
+
+.status-chip {
+  background-color: var(--status-bg);
+  color: var(--status-text);
+}
+
+.status-new {
+  --status-bg: #f3f4f6;
+  --status-text: #374151;
+}
+
+.status-progress {
+  --status-bg: #dbeafe;
+  --status-text: #1d4ed8;
+}
+
+.status-done {
+  --status-bg: #dcfce7;
+  --status-text: #15803d;
+}
+
+.status-frozen {
+  --status-bg: #e0f2fe;
+  --status-text: #0369a1;
+}
+
+.status-waiting {
+  --status-bg: #fef9c3;
+  --status-text: #a16207;
+}
+
+.dark .deadline-overdue,
+.theme-palette .deadline-overdue {
+  --deadline-border: #991b1b;
+  --deadline-bg: rgba(127, 29, 29, 0.42);
+  --deadline-text: #fecaca;
+}
+
+.dark .deadline-soon,
+.theme-palette .deadline-soon {
+  --deadline-border: #a16207;
+  --deadline-bg: rgba(113, 63, 18, 0.42);
+  --deadline-text: #fde68a;
+}
+
+.dark .priority-critical,
+.theme-palette .priority-critical {
+  --priority-border: rgba(248, 113, 113, 0.55);
+  --priority-bg: rgba(127, 29, 29, 0.35);
+  --priority-text: #fca5a5;
+}
+
+.dark .priority-high,
+.theme-palette .priority-high {
+  --priority-border: rgba(251, 146, 60, 0.55);
+  --priority-bg: rgba(124, 45, 18, 0.35);
+  --priority-text: #fdba74;
+}
+
+.dark .priority-medium,
+.theme-palette .priority-medium {
+  --priority-border: rgba(250, 204, 21, 0.5);
+  --priority-bg: rgba(113, 63, 18, 0.35);
+  --priority-text: #fde68a;
+}
+
+.dark .priority-low,
+.theme-palette .priority-low {
+  --priority-border: rgba(74, 222, 128, 0.5);
+  --priority-bg: rgba(20, 83, 45, 0.35);
+  --priority-text: #86efac;
+}
+
+.dark .status-new,
+.theme-palette .status-new {
+  --status-bg: rgba(148, 163, 184, 0.2);
+  --status-text: #e2e8f0;
+}
+
+.dark .status-progress,
+.theme-palette .status-progress {
+  --status-bg: rgba(37, 99, 235, 0.28);
+  --status-text: #bfdbfe;
+}
+
+.dark .status-done,
+.theme-palette .status-done {
+  --status-bg: rgba(22, 101, 52, 0.35);
+  --status-text: #bbf7d0;
+}
+
+.dark .status-frozen,
+.theme-palette .status-frozen {
+  --status-bg: rgba(3, 105, 161, 0.32);
+  --status-text: #bae6fd;
+}
+
+.dark .status-waiting,
+.theme-palette .status-waiting {
+  --status-bg: rgba(161, 98, 7, 0.32);
+  --status-text: #fef3c7;
+}
+
+.dark .status-chip,
+.theme-palette .status-chip {
+  border-color: rgba(148, 163, 184, 0.35);
+  background-color: var(--status-bg);
+  color: var(--status-text);
+}
+
+.dark .priority-select option,
+.dark .status-chip option {
+  background-color: #111827;
+  color: #f3f4f6;
+}
+
+.theme-palette .priority-select option,
+.theme-palette .status-chip option {
+  background-color: #162f55;
+  color: #f8f1e5;
+}
+
 /* Компактные, единообразные поля ввода на страницах авторизации и таблицы */
 .field {
   @apply w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink-900 outline-none transition-colors;

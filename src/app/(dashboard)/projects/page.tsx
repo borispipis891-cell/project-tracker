@@ -547,8 +547,8 @@ export default function ProjectsPage() {
   const deadlineClass = (dateStr: string): string => {
     const days = daysUntil(dateStr);
     if (days === null) return '';
-    if (days <= 0) return 'bg-red-50';
-    if (days <= 3) return 'bg-yellow-50';
+    if (days <= 0) return 'deadline-highlight deadline-overdue';
+    if (days <= 3) return 'deadline-highlight deadline-soon';
     return '';
   };
 
@@ -1236,22 +1236,22 @@ export default function ProjectsPage() {
 
   const getStatusColor = (status: ProjectStatus): string => {
     const colors = {
-      new: 'bg-gray-100 text-gray-700',
-      progress: 'bg-blue-100 text-blue-700',
-      done: 'bg-green-100 text-green-700',
-      blocked: 'bg-sky-100 text-sky-700',
-      waiting: 'bg-yellow-100 text-yellow-700'
+      new: 'status-chip status-new',
+      progress: 'status-chip status-progress',
+      done: 'status-chip status-done',
+      blocked: 'status-chip status-frozen',
+      waiting: 'status-chip status-waiting'
     };
     return colors[status];
   };
 
   const getTaskStatusColor = (status: TaskStatus): string => {
     const colors = {
-      not_started: 'bg-gray-100 text-gray-700',
-      progress: 'bg-blue-100 text-blue-700',
-      blocked: 'bg-sky-100 text-sky-700',
-      review: 'bg-yellow-100 text-yellow-700',
-      done: 'bg-green-100 text-green-700'
+      not_started: 'status-chip status-new',
+      progress: 'status-chip status-progress',
+      blocked: 'status-chip status-frozen',
+      review: 'status-chip status-waiting',
+      done: 'status-chip status-done'
     };
     return colors[status];
   };
@@ -1266,12 +1266,12 @@ export default function ProjectsPage() {
     return colors[priority];
   };
 
-  const getPriorityTextColor = (priority: Priority): string => {
+  const getPriorityClass = (priority: Priority): string => {
     const colors = {
-      critical: 'text-red-600',
-      high: 'text-orange-500',
-      medium: 'text-yellow-600',
-      low: 'text-green-600'
+      critical: 'priority-critical',
+      high: 'priority-high',
+      medium: 'priority-medium',
+      low: 'priority-low'
     };
     return colors[priority];
   };
@@ -1859,12 +1859,12 @@ export default function ProjectsPage() {
                       if (colId === 'priority') {
                         return (
                           <td key={colId} className="px-3 py-2">
-                            <div className="flex items-center gap-1">
+                            <div className={`priority-control flex items-center gap-1 ${getPriorityClass(project.priority)}`}>
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityDotColor(project.priority)}`}></span>
                               <select
                                 value={project.priority}
                                 onChange={(e) => updateProject(project.id, 'priority', e.target.value as Priority)}
-                                className={`border-none bg-transparent text-xs font-semibold outline-none cursor-pointer ${getPriorityTextColor(project.priority)}`}
+                                className="priority-select border-none bg-transparent text-xs font-semibold outline-none cursor-pointer"
                               >
                                 {Object.entries(PRIORITY_LABELS).map(([k, v]) => (
                                   <option key={k} value={k}>{v}</option>
@@ -1932,11 +1932,7 @@ export default function ProjectsPage() {
                                 type="date"
                                 value={project.deadline}
                                 onChange={(e) => updateProject(project.id, 'deadline', e.target.value)}
-                                className={`text-sm font-semibold border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full ${
-                                  deadlineClass(project.deadline) === 'bg-red-50' ? 'text-red-600' :
-                                  deadlineClass(project.deadline) === 'bg-yellow-50' ? 'text-yellow-700' :
-                                  'text-gray-900'
-                                }`}
+                                className="deadline-input text-sm font-semibold border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full text-gray-900"
                               />
                             </div>
                           </td>
@@ -2170,7 +2166,7 @@ export default function ProjectsPage() {
                                   type="date"
                                   value={task.deadline}
                                   onChange={(e) => updateTask(project.id, task.id, 'deadline', e.target.value)}
-                                  className="text-sm border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full"
+                                  className="deadline-input text-sm border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full"
                                 />
                               </div>
                             </td>
@@ -2196,7 +2192,7 @@ export default function ProjectsPage() {
                               <select
                                 value={task.status}
                                 onChange={(e) => updateTask(project.id, task.id, 'status', e.target.value)}
-                                className="text-xs px-2 py-1 rounded border border-gray-300 cursor-pointer outline-none w-full"
+                                className={`text-xs font-semibold px-2 py-1 rounded-xl border border-gray-300 cursor-pointer outline-none w-full ${getTaskStatusColor(task.status)}`}
                               >
                                 {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => (
                                   <option key={k} value={k}>{v}</option>

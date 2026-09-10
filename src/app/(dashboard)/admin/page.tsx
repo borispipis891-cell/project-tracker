@@ -1,469 +1,146 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { ADMIN_EMAIL } from '@/lib/admin';
 
-type UserRole = 'admin' | 'manager' | 'engineer' | 'viewer' | 'none';
-
-interface User {
+interface RegisteredUser {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
-  permissions: {
-    canCreate: boolean;
-    canEdit: boolean;
-    canDelete: boolean;
-    canExport: boolean;
-    canManageColumns: boolean;
-    canViewAll: boolean;
-  };
+  isBlocked: boolean;
   createdAt: string;
-  status: 'active' | 'pending' | 'blocked';
 }
 
-const ROLE_LABELS: Record<UserRole, string> = {
-  admin: 'Администратор',
-  manager: 'Менеджер',
-  engineer: 'Инженер',
-  viewer: 'Наблюдатель',
-  none: 'Нет прав'
-};
-
-const DEFAULT_PERMISSIONS: Record<UserRole, User['permissions']> = {
-  admin: {
-    canCreate: true,
-    canEdit: true,
-    canDelete: true,
-    canExport: true,
-    canManageColumns: true,
-    canViewAll: true
-  },
-  manager: {
-    canCreate: true,
-    canEdit: true,
-    canDelete: false,
-    canExport: true,
-    canManageColumns: true,
-    canViewAll: true
-  },
-  engineer: {
-    canCreate: false,
-    canEdit: true,
-    canDelete: false,
-    canExport: false,
-    canManageColumns: false,
-    canViewAll: false
-  },
-  viewer: {
-    canCreate: false,
-    canEdit: false,
-    canDelete: false,
-    canExport: false,
-    canManageColumns: false,
-    canViewAll: true
-  },
-  none: {
-    canCreate: false,
-    canEdit: false,
-    canDelete: false,
-    canExport: false,
-    canManageColumns: false,
-    canViewAll: false
-  }
-};
+interface PendingInvitation {
+  id: string;
+  email: string;
+  expiresAt: string;
+}
 
 export default function AdminPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [showPermissionsModal, setShowPermissionsModal] = useState<User | null>(null);
+  const [users, setUsers] = useState<RegisteredUser[]>([]);
+  const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [sending, setSending] = useState(false);
 
-  useEffect(() => {
-    const savedUsers = localStorage.getItem('users');
-    if (savedUsers) {
-      setUsers(JSON.parse(savedUsers));
-    } else {
-      // Initialize with admin user
-      const initialUsers: User[] = [
-        {
-          id: '1',
-          name: 'Борис',
-          email: ADMIN_EMAIL,
-          role: 'admin',
-          permissions: DEFAULT_PERMISSIONS.admin,
-          createdAt: new Date().toISOString(),
-          status: 'active'
-        }
-      ];
-      setUsers(initialUsers);
-      localStorage.setItem('users', JSON.stringify(initialUsers));
+  const loadUsers = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/users', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Не удалось загрузить пользователей');
+      const data = await response.json();
+      setUsers(data.users);
+      setInvitations(data.invitations);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (users.length > 0) {
-      localStorage.setItem('users', JSON.stringify(users));
-    }
-  }, [users]);
+    loadUsers();
+  }, [loadUsers]);
 
-  const addUser = () => {
-    const name = (document.getElementById('user_name') as HTMLInputElement).value.trim();
-    const email = (document.getElementById('user_email') as HTMLInputElement).value.trim();
+  const inviteUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') || '').trim();
+    const email = String(form.get('email') || '').trim().toLowerCase();
+    if (!name || !email) return;
 
-    if (!name || !email) {
-      alert('Заполните все поля');
-      return;
-    }
-
-    if (editingUser) {
-      setUsers(users.map(u => u.id === editingUser.id ? { ...u, name, email } : u));
-    } else {
-      const newUser: User = {
-        id: Date.now().toString(),
-        name,
-        email,
-        role: 'none',
-        permissions: DEFAULT_PERMISSIONS.none,
-        createdAt: new Date().toISOString(),
-        status: 'pending'
-      };
-      setUsers([...users, newUser]);
-    }
-
-    setShowModal(false);
-    setEditingUser(null);
-  };
-
-  const changeUserRole = (userId: string, newRole: UserRole) => {
-    setUsers(users.map(u => {
-      if (u.id === userId) {
-        return {
-          ...u,
-          role: newRole,
-          permissions: DEFAULT_PERMISSIONS[newRole],
-          status: newRole === 'none' ? 'pending' : 'active'
-        };
-      }
-      return u;
-    }));
-  };
-
-  const togglePermission = (userId: string, permission: keyof User['permissions']) => {
-    setUsers(users.map(u => {
-      if (u.id === userId) {
-        return {
-          ...u,
-          permissions: {
-            ...u.permissions,
-            [permission]: !u.permissions[permission]
-          }
-        };
-      }
-      return u;
-    }));
-  };
-
-  const deleteUser = (userId: string) => {
-    if (!confirm('Удалить пользователя?')) return;
-    setUsers(users.filter(u => u.id !== userId));
-  };
-
-  const blockUser = (userId: string) => {
-    setUsers(users.map(u => {
-      if (u.id === userId) {
-        return { ...u, status: u.status === 'blocked' ? 'active' : 'blocked' as const };
-      }
-      return u;
-    }));
-  };
-
-  const sendInvitation = async (user: User) => {
+    setSending(true);
     try {
       const response = await fetch('/api/admin/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email, name: user.name }),
+        body: JSON.stringify({ name, email }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to send invitation');
-      }
-
-      alert(`✅ Приглашение отправлено на ${user.email}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Не удалось отправить приглашение');
+      setShowInviteForm(false);
+      await loadUsers();
     } catch (error) {
-      console.error('Error sending invitation:', error);
-      alert('❌ Ошибка при отправке приглашения. Проверьте SMTP настройки.');
+      alert(error instanceof Error ? error.message : 'Не удалось отправить приглашение');
+    } finally {
+      setSending(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-blue-50 border-b border-blue-200 text-blue-800 text-xs py-2 px-4 sm:px-5 text-center">
-        Панель администратора
-      </div>
-
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-5 py-3 sticky top-0 z-20 flex items-center gap-2 sm:gap-3 overflow-x-auto">
-        <div className="font-bold text-blue-600 text-sm sm:text-base whitespace-nowrap">◆ Tracker</div>
-        <Link href="/projects" className="text-gray-600 hover:text-gray-900 text-xs sm:text-sm whitespace-nowrap">Проекты</Link>
-        <div className="font-semibold text-sm sm:text-base whitespace-nowrap">Управление пользователями</div>
-      </div>
-
-      <div className="p-4 sm:p-5 max-w-7xl mx-auto">
-        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-            <h1 className="text-base sm:text-lg font-semibold">Пользователи системы</h1>
-            <button
-              onClick={() => {
-                setEditingUser(null);
-                setShowModal(true);
-              }}
-              className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-            >
-              + Добавить пользователя
-            </button>
-          </div>
-
-          {/* Desktop Table */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Пользователь</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Роль</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Статус</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Дата регистрации</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(user => (
-                  <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-sm">{user.name}</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{user.email}</td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={user.role}
-                        onChange={(e) => changeUserRole(user.id, e.target.value as UserRole)}
-                        disabled={user.email.toLowerCase() === ADMIN_EMAIL}
-                        className="text-xs px-2 py-1 rounded border border-gray-300 cursor-pointer outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-1 text-xs rounded-full ${
-                        user.status === 'active' ? 'bg-green-100 text-green-700' :
-                        user.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-red-100 text-red-700'
-                      }`}>
-                        {user.status === 'active' ? 'Активен' :
-                         user.status === 'pending' ? 'Ожидает' : 'Заблокирован'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {new Date(user.createdAt).toLocaleDateString('ru-RU')}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => sendInvitation(user)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
-                          title="Отправить приглашение на email"
-                        >
-                          📧
-                        </button>
-                        <button
-                          onClick={() => setShowPermissionsModal(user)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
-                          title="Настроить права"
-                        >
-                          ⚙️
-                        </button>
-                        {user.email.toLowerCase() !== ADMIN_EMAIL && (
-                          <>
-                            <button
-                              onClick={() => blockUser(user.id)}
-                              className="text-orange-600 hover:text-orange-800 text-sm"
-                              title={user.status === 'blocked' ? 'Разблокировать' : 'Заблокировать'}
-                            >
-                              {user.status === 'blocked' ? '🔓' : '🔒'}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingUser(user);
-                                setShowModal(true);
-                              }}
-                              className="text-gray-600 hover:text-gray-800 text-sm"
-                              title="Редактировать"
-                            >
-                              ✎
-                            </button>
-                            <button
-                              onClick={() => deleteUser(user.id)}
-                              className="text-red-600 hover:text-red-800 text-sm"
-                              title="Удалить"
-                            >
-                              ✕
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Пользователи</h1>
+          <p className="mt-1 text-sm text-gray-500">Все зарегистрированные аккаунты системы</p>
         </div>
+        <button onClick={() => setShowInviteForm(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          Пригласить пользователя
+        </button>
       </div>
 
-      {/* Add/Edit User Modal */}
-      {showModal && (
-        <div
-          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="bg-white rounded-lg w-full max-w-md p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-semibold mb-4">
-              {editingUser ? 'Редактировать пользователя' : 'Добавить пользователя'}
-            </h2>
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Имя</label>
-                <input
-                  id="user_name"
-                  type="text"
-                  defaultValue={editingUser?.name || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600"
-                  placeholder="Введите имя"
-                />
+      <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
+        <div className="border-b px-5 py-4 font-semibold">Зарегистрированные ({users.length})</div>
+        {loading ? (
+          <div className="p-6 text-sm text-gray-500">Загрузка...</div>
+        ) : users.length === 0 ? (
+          <div className="p-6 text-sm text-gray-500">Зарегистрированных пользователей пока нет</div>
+        ) : (
+          <div className="divide-y">
+            {users.map(user => (
+              <div key={user.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-medium text-gray-900">{user.name}</div>
+                  <div className="text-sm text-gray-500">{user.email}</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-xs">
+                  <span className={`rounded-full px-2 py-1 ${user.isBlocked ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                    {user.isBlocked ? 'Заблокирован' : 'Активен'}
+                  </span>
+                  <span className="text-gray-500">{user.email.toLowerCase() === ADMIN_EMAIL ? 'Администратор' : 'Пользователь'}</span>
+                  <span className="text-gray-400">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</span>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  id="user_email"
-                  type="email"
-                  defaultValue={editingUser?.email || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600"
-                  placeholder="email@example.com"
-                />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
+        <div className="border-b px-5 py-4 font-semibold">Ожидают регистрации ({invitations.length})</div>
+        {invitations.length === 0 ? (
+          <div className="p-6 text-sm text-gray-500">Активных приглашений нет</div>
+        ) : (
+          <div className="divide-y">
+            {invitations.map(invitation => (
+              <div key={invitation.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                <span className="text-sm text-gray-700">{invitation.email}</span>
+                <span className="text-xs text-gray-400">до {new Date(invitation.expiresAt).toLocaleDateString('ru-RU')}</span>
               </div>
-              {!editingUser && (
-                <p className="text-xs text-gray-500">
-                  Пользователь будет создан со статусом "Ожидает" и без прав доступа.
-                  Назначьте роль после создания.
-                </p>
-              )}
-            </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {showInviteForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 p-5" onClick={() => setShowInviteForm(false)}>
+          <form className="w-full max-w-md rounded-lg bg-white p-6" onSubmit={inviteUser} onClick={event => event.stopPropagation()}>
+            <h2 className="mb-4 text-lg font-semibold">Пригласить пользователя</h2>
+            <label className="mb-3 block text-sm font-medium text-gray-700">
+              Имя
+              <input name="name" required className="mt-1 w-full rounded-md border px-3 py-2 font-normal" />
+            </label>
+            <label className="mb-5 block text-sm font-medium text-gray-700">
+              Email
+              <input name="email" type="email" required className="mt-1 w-full rounded-md border px-3 py-2 font-normal" />
+            </label>
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={addUser}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-              >
-                {editingUser ? 'Сохранить' : 'Добавить'}
+              <button type="button" onClick={() => setShowInviteForm(false)} className="rounded-md border px-4 py-2 text-sm">Отмена</button>
+              <button disabled={sending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">
+                {sending ? 'Отправка...' : 'Отправить'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Permissions Modal */}
-      {showPermissionsModal && (
-        <div
-          className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
-          onClick={() => setShowPermissionsModal(null)}
-        >
-          <div
-            className="bg-white rounded-lg w-full max-w-md p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-semibold mb-4">
-              Права доступа: {showPermissionsModal.name}
-            </h2>
-            <div className="space-y-3 mb-4">
-              <div className="text-sm text-gray-600 mb-3">
-                Роль: <span className="font-medium">{ROLE_LABELS[showPermissionsModal.role]}</span>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPermissionsModal.permissions.canCreate}
-                  onChange={() => togglePermission(showPermissionsModal.id, 'canCreate')}
-                  className="rounded"
-                />
-                <span className="text-sm">Создание проектов</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPermissionsModal.permissions.canEdit}
-                  onChange={() => togglePermission(showPermissionsModal.id, 'canEdit')}
-                  className="rounded"
-                />
-                <span className="text-sm">Редактирование проектов</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPermissionsModal.permissions.canDelete}
-                  onChange={() => togglePermission(showPermissionsModal.id, 'canDelete')}
-                  className="rounded"
-                />
-                <span className="text-sm">Удаление проектов</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPermissionsModal.permissions.canExport}
-                  onChange={() => togglePermission(showPermissionsModal.id, 'canExport')}
-                  className="rounded"
-                />
-                <span className="text-sm">Экспорт данных</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPermissionsModal.permissions.canManageColumns}
-                  onChange={() => togglePermission(showPermissionsModal.id, 'canManageColumns')}
-                  className="rounded"
-                />
-                <span className="text-sm">Управление столбцами</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPermissionsModal.permissions.canViewAll}
-                  onChange={() => togglePermission(showPermissionsModal.id, 'canViewAll')}
-                  className="rounded"
-                />
-                <span className="text-sm">Просмотр всех проектов</span>
-              </label>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowPermissionsModal(null)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-              >
-                Готово
-              </button>
-            </div>
-          </div>
+          </form>
         </div>
       )}
     </div>

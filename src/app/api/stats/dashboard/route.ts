@@ -33,13 +33,16 @@ export async function GET() {
       return acc;
     }, {} as Record<string, number>);
 
-    const activeProjects = (statusCounts['active'] || 0) + (statusCounts['pending'] || 0);
-    const completedProjects = statusCounts['completed'] || 0;
+    const activeProjects = (statusCounts['new'] || 0) +
+      (statusCounts['progress'] || 0) +
+      (statusCounts['waiting'] || 0) +
+      (statusCounts['blocked'] || 0);
+    const completedProjects = statusCounts['done'] || 0;
 
     // Count overdue projects
     const now = new Date();
     const overdueProjects = allProjects.filter((project) => {
-      if (project.status === 'completed' || project.status === 'cancelled') {
+      if (project.status === 'done') {
         return false;
       }
       try {
@@ -52,15 +55,16 @@ export async function GET() {
 
     // Projects by status for pie chart
     const projectsByStatus = Object.entries(statusCounts).map(([name, value]) => ({
-      name: name === 'active' ? 'Активные' :
-            name === 'pending' ? 'Ожидают' :
-            name === 'completed' ? 'Завершенные' :
-            name === 'cancelled' ? 'Отмененные' : name,
+      name: name === 'new' ? 'Новые' :
+            name === 'progress' ? 'В работе' :
+            name === 'waiting' ? 'Ожидают' :
+            name === 'blocked' ? 'Заблокированы' :
+            name === 'done' ? 'Завершенные' : name,
       value,
-      color: name === 'active' ? '#3B82F6' :
-             name === 'pending' ? '#F59E0B' :
-             name === 'completed' ? '#10B981' :
-             name === 'cancelled' ? '#EF4444' : '#6B7280'
+      color: name === 'progress' ? '#3B82F6' :
+             name === 'waiting' ? '#F59E0B' :
+             name === 'done' ? '#10B981' :
+             name === 'blocked' ? '#EF4444' : '#6B7280'
     }));
 
     // Count by priority
@@ -98,34 +102,23 @@ export async function GET() {
     // Completion rate
     const completionRate = totalProjects > 0 ? (completedProjects / totalProjects) * 100 : 0;
 
-    // Get current user for recent projects
-    const currentUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-    });
-
-    // Get recent projects (top 5) with tasks count
-    const recentProjectsData = await prisma.project.findMany({
-      where: {
-        deletedAt: null,
-        OR: [
-          { ownerId: currentUser?.id },
-          {
-            ProjectMember: {
-              some: {
-                userId: currentUser?.id,
-              },
-            },
-          },
-        ],
-      },
-      include: {
-        Task: {
-          select: { id: true },
+    // Recent projects are shared with every authenticated user.
+    const [recentProjectsData, totalTasks] = await Promise.all([
+      prisma.project.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          customer: true,
+          status: true,
+          priority: true,
+          _count: { select: { Task: true } },
         },
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 5,
-    });
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+      }),
+      prisma.task.count({ where: { Project: { deletedAt: null } } }),
+    ]);
 
     const recentProjects = recentProjectsData.map((project) => ({
       id: project.id,
@@ -133,17 +126,8 @@ export async function GET() {
       customer: project.customer,
       status: project.status,
       priority: project.priority,
-      tasksCount: project.Task.length,
+      tasksCount: project._count.Task,
     }));
-
-    // Count total tasks
-    const totalTasks = await prisma.task.count({
-      where: {
-        Project: {
-          deletedAt: null,
-        },
-      },
-    });
 
     return NextResponse.json({
       totalProjects,

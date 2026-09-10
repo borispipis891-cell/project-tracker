@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import { SignOutButton } from './sign-out-button';
@@ -56,6 +56,12 @@ interface CustomColumn {
   id: string;
   label: string;
   visible: boolean;
+}
+
+interface RegisteredUser {
+  id: string;
+  name: string;
+  email: string;
 }
 
 const PRIORITY_LABELS: Record<Priority, string> = {
@@ -199,6 +205,7 @@ const DEMO_PROJECTS: Project[] = [
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
   const [currentUserName, setCurrentUserName] = useState('');
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -269,13 +276,26 @@ export default function ProjectsPage() {
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
+  const topbarRef = useRef<HTMLDivElement>(null);
+  const projectSaveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const taskSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const closeTopbarMenus = useCallback(() => {
+    setShowColumnSelector(false);
+    setShowEmailSettings(false);
+    setShowNotifications(false);
+    setShowUserMenu(false);
+  }, []);
 
   // Use the authenticated account as the only source of admin access.
   useEffect(() => {
-    fetch('/api/auth/session')
-      .then(response => response.json())
-      .then(session => {
+    Promise.all([
+      fetch('/api/auth/session').then(response => response.json()),
+      fetch('/api/users').then(response => response.ok ? response.json() : []),
+    ])
+      .then(([session, users]) => {
         const admin = isAdminEmail(session?.user?.email);
+        setRegisteredUsers(users);
         setCurrentUserName(session?.user?.name || session?.user?.email || 'Пользователь');
         setCurrentUserRole(admin ? 'admin' : 'user');
         setPermissions(current => ({
@@ -286,6 +306,29 @@ export default function ProjectsPage() {
       })
       .catch(() => setCurrentUserRole('user'));
   }, []);
+
+  useEffect(() => () => {
+    Object.values(projectSaveTimers.current).forEach(clearTimeout);
+    Object.values(taskSaveTimers.current).forEach(clearTimeout);
+  }, []);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (topbarRef.current && !topbarRef.current.contains(event.target as Node)) {
+        closeTopbarMenus();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeTopbarMenus();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeTopbarMenus]);
 
   // Load data from API and localStorage on mount
   useEffect(() => {
@@ -704,8 +747,6 @@ export default function ProjectsPage() {
     low: 3
   };
 
-  const USERS = ['Борис', 'Мария', 'Алексей', 'Иван', 'Дмитрий', 'Анна', 'Сергей'];
-
   const addHistory = (projectId: number, action: string, details: string) => {
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
@@ -759,15 +800,19 @@ export default function ProjectsPage() {
     // Save to API
     const updatedProject = updated.find(p => p.id === id);
     if (updatedProject) {
-      try {
-        await fetch(`/api/projects/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedProject),
-        });
-      } catch (error) {
-        console.error('Failed to update project:', error);
-      }
+      clearTimeout(projectSaveTimers.current[id]);
+      projectSaveTimers.current[id] = setTimeout(async () => {
+        try {
+          const response = await fetch(`/api/projects/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedProject),
+          });
+          if (!response.ok) throw new Error('Failed to update project');
+        } catch (error) {
+          console.error('Failed to update project:', error);
+        }
+      }, 350);
     }
 
     // Add history entry
@@ -803,27 +848,31 @@ export default function ProjectsPage() {
       updatedTask.completedAt = undefined;
     }
 
-    // Save to API with history
-    try {
-      const response = await fetch(`/api/projects/${projectId}/tasks/${taskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedTask),
-      });
+    // Update immediately in the UI and combine rapid edits into one API request.
+    setProjects(current => current.map(p => p.id === projectId ? {
+      ...p,
+      tasks: p.tasks.map(t => t.id === taskId ? updatedTask : t),
+    } : p));
 
-      if (response.ok) {
-        // Обновляем задачу локально без повторного запроса проекта
+    const timerKey = `${projectId}:${taskId}`;
+    clearTimeout(taskSaveTimers.current[timerKey]);
+    taskSaveTimers.current[timerKey] = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/tasks/${taskId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedTask),
+        });
+        if (!response.ok) throw new Error('Failed to update task');
         const returnedTask = await response.json();
-        setProjects(projects.map(p =>
-          p.id === projectId ? {
-            ...p,
-            tasks: p.tasks.map(t => t.id === taskId ? returnedTask : t)
-          } : p
-        ));
+        setProjects(current => current.map(p => p.id === projectId ? {
+          ...p,
+          tasks: p.tasks.map(t => t.id === taskId ? returnedTask : t),
+        } : p));
+      } catch (error) {
+        console.error('Failed to update task:', error);
       }
-    } catch (error) {
-      console.error('Failed to update task:', error);
-    }
+    }, 350);
   };
 
   const toggleTaskDone = async (projectId: number, taskId: number) => {
@@ -1077,8 +1126,8 @@ export default function ProjectsPage() {
       reg: (document.getElementById('f_reg') as HTMLInputElement).value,
       status: (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus,
       priority: (document.getElementById('f_priority') as HTMLSelectElement).value as Priority,
-      responsible: (document.getElementById('f_responsible') as HTMLInputElement).value,
-      engineer: (document.getElementById('f_engineer') as HTMLInputElement).value,
+      responsible: (document.getElementById('f_responsible') as HTMLSelectElement).value,
+      engineer: (document.getElementById('f_engineer') as HTMLSelectElement).value,
       color: editingProject?.color || newProjectColor,
       tags: editingProject?.tags || newProjectTags,
     };
@@ -1337,7 +1386,7 @@ export default function ProjectsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Topbar */}
-      <div className="bg-white border-b border-gray-200 px-5 py-3 sticky top-0 z-20 flex items-center gap-3 flex-wrap">
+      <div ref={topbarRef} className="bg-white border-b border-gray-200 px-5 py-3 sticky top-0 z-20 flex items-center gap-3 flex-wrap">
         <div className="font-bold text-blue-600 text-base">◆ Tracker</div>
         <div className="font-semibold text-base">Проекты</div>
         <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 text-sm">Статистика</Link>
@@ -1379,6 +1428,7 @@ export default function ProjectsPage() {
               <button
               onClick={() => {
                 setShowColumnSelector(!showColumnSelector);
+                setShowEmailSettings(false);
                 setShowNotifications(false);
                 setShowUserMenu(false);
               }}
@@ -1470,7 +1520,11 @@ export default function ProjectsPage() {
             </button>
           )}
           <button
-            onClick={() => setShowEmailSettings(!showEmailSettings)}
+            onClick={() => {
+              const nextValue = !showEmailSettings;
+              closeTopbarMenus();
+              setShowEmailSettings(nextValue);
+            }}
             className="w-9 h-9 border border-gray-300 rounded-md flex items-center justify-center hover:bg-gray-50"
             title="Настройки email-уведомлений"
           >
@@ -1480,6 +1534,8 @@ export default function ProjectsPage() {
             <button
               onClick={() => {
                 setShowNotifications(!showNotifications);
+                setShowColumnSelector(false);
+                setShowEmailSettings(false);
                 setShowUserMenu(false);
               }}
               className="w-9 h-9 border border-gray-300 rounded-md flex items-center justify-center hover:bg-gray-50 relative"
@@ -1611,6 +1667,8 @@ export default function ProjectsPage() {
             <button
               onClick={() => {
                 setShowUserMenu(!showUserMenu);
+                setShowColumnSelector(false);
+                setShowEmailSettings(false);
                 setShowNotifications(false);
               }}
               className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-semibold text-xs"
@@ -1629,11 +1687,11 @@ export default function ProjectsPage() {
                   </div>
                 </div>
                 {currentUserRole === 'admin' && (
-                  <Link href="/admin" className="block px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">
+                  <Link href="/admin" onClick={closeTopbarMenus} className="block px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">
                     Управление пользователями
                   </Link>
                 )}
-                <div className="px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">Настройки</div>
+                <Link href="/settings" onClick={closeTopbarMenus} className="block px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">Настройки</Link>
                 <div className="px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">
                   <SignOutButton />
                 </div>
@@ -1913,17 +1971,14 @@ export default function ProjectsPage() {
                       if (colId === 'responsible') {
                         return (
                           <td key={colId} className="px-3 py-2">
-                            <input
-                              type="text"
-                              list={`users-${project.id}-resp`}
+                            <select
                               value={project.responsible}
                               onChange={(e) => updateProject(project.id, 'responsible', e.target.value)}
-                              placeholder="Выберите или впишите"
                               className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
-                            />
-                            <datalist id={`users-${project.id}-resp`}>
-                              {USERS.map(u => <option key={u} value={u} />)}
-                            </datalist>
+                            >
+                              <option value="">Не назначен</option>
+                              {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                            </select>
                           </td>
                         );
                       }
@@ -1931,17 +1986,14 @@ export default function ProjectsPage() {
                       if (colId === 'engineer') {
                         return (
                           <td key={colId} className="px-3 py-2">
-                            <input
-                              type="text"
-                              list={`users-${project.id}-eng`}
+                            <select
                               value={project.engineer}
                               onChange={(e) => updateProject(project.id, 'engineer', e.target.value)}
-                              placeholder="Выберите или впишите"
                               className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
-                            />
-                            <datalist id={`users-${project.id}-eng`}>
-                              {USERS.map(u => <option key={u} value={u} />)}
-                            </datalist>
+                            >
+                              <option value="">Не назначен</option>
+                              {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                            </select>
                           </td>
                         );
                       }
@@ -2112,17 +2164,14 @@ export default function ProjectsPage() {
                         if (colId === 'responsible') {
                           return (
                             <td key={colId} className="px-3 py-2">
-                              <input
-                                type="text"
-                                list={`users-${project.id}-${task.id}-resp`}
+                              <select
                                 value={task.responsible || ''}
                                 onChange={(e) => updateTask(project.id, task.id, 'responsible', e.target.value)}
-                                placeholder="—"
                                 className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
-                              />
-                              <datalist id={`users-${project.id}-${task.id}-resp`}>
-                                {USERS.map(u => <option key={u} value={u} />)}
-                              </datalist>
+                              >
+                                <option value="">Не назначен</option>
+                                {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                              </select>
                             </td>
                           );
                         }
@@ -2130,17 +2179,14 @@ export default function ProjectsPage() {
                         if (colId === 'engineer') {
                           return (
                             <td key={colId} className="px-3 py-2">
-                              <input
-                                type="text"
-                                list={`users-${project.id}-${task.id}-eng`}
+                              <select
                                 value={task.engineer || ''}
                                 onChange={(e) => updateTask(project.id, task.id, 'engineer', e.target.value)}
-                                placeholder="—"
                                 className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
-                              />
-                              <datalist id={`users-${project.id}-${task.id}-eng`}>
-                                {USERS.map(u => <option key={u} value={u} />)}
-                              </datalist>
+                              >
+                                <option value="">Не назначен</option>
+                                {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                              </select>
                             </td>
                           );
                         }
@@ -2287,11 +2333,17 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
-                <input id="f_responsible" defaultValue={editingProject?.responsible || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+                <select id="f_responsible" defaultValue={editingProject?.responsible || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  <option value="">Не назначен</option>
+                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Инженер</label>
-                <input id="f_engineer" defaultValue={editingProject?.engineer || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+                <select id="f_engineer" defaultValue={editingProject?.engineer || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  <option value="">Не назначен</option>
+                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -2380,17 +2432,17 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
-                <input id="t_responsible" list="t_users_resp" defaultValue={editingTask.task.responsible || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
-                <datalist id="t_users_resp">
-                  {USERS.map(u => <option key={u} value={u} />)}
-                </datalist>
+                <select id="t_responsible" defaultValue={editingTask.task.responsible || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  <option value="">Не назначен</option>
+                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Инженер</label>
-                <input id="t_engineer" list="t_users_eng" defaultValue={editingTask.task.engineer || ''} placeholder="Выберите или впишите" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
-                <datalist id="t_users_eng">
-                  {USERS.map(u => <option key={u} value={u} />)}
-                </datalist>
+                <select id="t_engineer" defaultValue={editingTask.task.engineer || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  <option value="">Не назначен</option>
+                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                </select>
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -2406,26 +2458,37 @@ export default function ProjectsPage() {
                   const receivedAt = (document.getElementById('t_received') as HTMLInputElement).value;
                   const deadline = (document.getElementById('t_deadline') as HTMLInputElement).value;
                   const status = (document.getElementById('t_status') as HTMLSelectElement).value;
-                  const responsible = (document.getElementById('t_responsible') as HTMLInputElement).value;
-                  const engineer = (document.getElementById('t_engineer') as HTMLInputElement).value;
+                  const responsible = (document.getElementById('t_responsible') as HTMLSelectElement).value;
+                  const engineer = (document.getElementById('t_engineer') as HTMLSelectElement).value;
+                  const updatedTask: Task = {
+                    ...editingTask.task,
+                    title,
+                    receivedAt,
+                    deadline,
+                    status: status as TaskStatus,
+                    responsible,
+                    engineer,
+                    completedAt: status === 'done'
+                      ? editingTask.task.completedAt || new Date().toISOString().split('T')[0]
+                      : undefined,
+                  };
 
-                  // Update all fields via API
-                  const updates = [
-                    { field: 'title' as keyof Task, value: title },
-                    { field: 'receivedAt' as keyof Task, value: receivedAt },
-                    { field: 'deadline' as keyof Task, value: deadline },
-                    { field: 'status' as keyof Task, value: status },
-                    { field: 'responsible' as keyof Task, value: responsible },
-                    { field: 'engineer' as keyof Task, value: engineer },
-                  ];
-
-                  for (const { field, value } of updates) {
-                    if (editingTask.task[field] !== value) {
-                      await updateTask(editingTask.projectId, editingTask.task.id, field, value);
-                    }
+                  try {
+                    const response = await fetch(`/api/projects/${editingTask.projectId}/tasks/${editingTask.task.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(updatedTask),
+                    });
+                    if (!response.ok) throw new Error('Не удалось сохранить задачу');
+                    const savedTask = await response.json();
+                    setProjects(current => current.map(project => project.id === editingTask.projectId ? {
+                      ...project,
+                      tasks: project.tasks.map(task => task.id === editingTask.task.id ? savedTask : task),
+                    } : project));
+                    setEditingTask(null);
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : 'Не удалось сохранить задачу');
                   }
-
-                  setEditingTask(null);
                 }}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
               >

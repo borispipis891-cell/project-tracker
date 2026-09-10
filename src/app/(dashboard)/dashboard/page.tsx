@@ -258,21 +258,23 @@ export default function DashboardPage() {
                   <div className="flex items-center space-x-4">
                     <span
                       className={`px-3 py-1 text-xs font-medium rounded-full ${
-                        project.status === 'completed'
+                        project.status === 'done'
                           ? 'bg-green-100 text-green-700'
-                          : project.status === 'active'
+                          : project.status === 'progress'
                           ? 'bg-blue-100 text-blue-700'
-                          : project.status === 'cancelled'
+                          : project.status === 'blocked'
                           ? 'bg-red-100 text-red-700'
                           : 'bg-gray-100 text-gray-700'
                       }`}
                     >
-                      {project.status === 'completed'
+                      {project.status === 'done'
                         ? 'Завершён'
-                        : project.status === 'active'
-                        ? 'Активный'
-                        : project.status === 'cancelled'
-                        ? 'Отменён'
+                        : project.status === 'progress'
+                        ? 'В работе'
+                        : project.status === 'blocked'
+                        ? 'Заблокирован'
+                        : project.status === 'new'
+                        ? 'Новый'
                         : 'Ожидает'}
                     </span>
                     <span

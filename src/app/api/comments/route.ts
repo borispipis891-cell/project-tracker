@@ -11,6 +11,12 @@ const escapeHtml = (value: string) => value
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
 
+const responsibleUserIdFrom = (customFields: unknown) => {
+  if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
+  const value = (customFields as Record<string, unknown>).__responsibleUserId;
+  return typeof value === 'string' && value ? value : null;
+};
+
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -36,29 +42,35 @@ export async function POST(request: Request) {
   try {
     if (taskId) {
       const task = await prisma.task.findUnique({
-      where: { id: Number(taskId) },
-      select: {
-        title: true,
-        responsible: true,
-        projectId: true,
-        Project: { select: { name: true } },
-      },
-    });
+        where: { id: Number(taskId) },
+        select: {
+          title: true,
+          responsible: true,
+          customFields: true,
+          projectId: true,
+          Project: { select: { name: true } },
+        },
+      });
 
       if (task?.responsible) {
+        const responsibleUserId = responsibleUserIdFrom(task.customFields);
         const responsibleUser = await prisma.user.findFirst({
-        where: { name: task.responsible, status: 'active', isBlocked: false },
-        select: { email: true },
-      });
+          where: {
+            ...(responsibleUserId ? { id: responsibleUserId } : { name: task.responsible }),
+            status: 'active',
+            isBlocked: false,
+          },
+          select: { email: true },
+        });
 
         if (responsibleUser) {
           const emailData = emailTemplates.taskUpdate({
-          projectName: escapeHtml(task.Project.name),
-          taskTitle: escapeHtml(task.title),
-          changes: `Добавлен комментарий: «${escapeHtml(normalizedText)}»`,
-          updatedBy: escapeHtml(session.user.name || session.user.email),
-          projectUrl: `${process.env.APP_URL || process.env.NEXTAUTH_URL || ''}/projects?project=${task.projectId}`,
-        });
+            projectName: escapeHtml(task.Project.name),
+            taskTitle: escapeHtml(task.title),
+            changes: `Добавлен комментарий: «${escapeHtml(normalizedText)}»`,
+            updatedBy: escapeHtml(session.user.name || session.user.email),
+            projectUrl: `${process.env.APP_URL || process.env.NEXTAUTH_URL || ''}/projects?project=${task.projectId}`,
+          });
 
           await sendEmail({ to: responsibleUser.email, ...emailData });
         }

@@ -7,6 +7,12 @@ import { emailTemplates, sendEmail } from '@/lib/email';
 
 const appUrl = () => process.env.APP_URL || process.env.NEXTAUTH_URL || '';
 
+const responsibleUserIdFrom = (customFields: unknown) => {
+  if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
+  const value = (customFields as Record<string, unknown>).__responsibleUserId;
+  return typeof value === 'string' && value ? value : null;
+};
+
 const escapeHtml = (value: string) => value
   .replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;')
@@ -133,9 +139,10 @@ export async function PUT(
 
       if (task.responsible) {
         try {
+          const responsibleUserId = responsibleUserIdFrom(task.customFields);
           const responsibleUser = await prisma.user.findFirst({
             where: {
-              name: task.responsible,
+              ...(responsibleUserId ? { id: responsibleUserId } : { name: task.responsible }),
               status: 'active',
               isBlocked: false,
             },
@@ -240,10 +247,15 @@ export async function DELETE(
 
     if (task.responsible) {
       try {
+        const responsibleUserId = responsibleUserIdFrom(task.customFields);
         const [project, responsibleUser] = await Promise.all([
           prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
           prisma.user.findFirst({
-            where: { name: task.responsible, status: 'active', isBlocked: false },
+            where: {
+              ...(responsibleUserId ? { id: responsibleUserId } : { name: task.responsible }),
+              status: 'active',
+              isBlocked: false,
+            },
             select: { email: true },
           }),
         ]);

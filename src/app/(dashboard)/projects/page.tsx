@@ -844,12 +844,27 @@ export default function ProjectsPage() {
     }
   };
 
-  const updateTask = async (projectId: number, taskId: number, field: keyof Task, value: any) => {
+  const updateTask = async (
+    projectId: number,
+    taskId: number,
+    field: keyof Task,
+    value: any,
+    responsibleUserId?: string,
+  ) => {
     const project = projects.find(p => p.id === projectId);
     const task = project?.tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    const updatedTask = { ...task, [field]: value };
+    const updatedTask = {
+      ...task,
+      [field]: value,
+      ...(field === 'responsible' ? {
+        customFields: {
+          ...(task.customFields || {}),
+          __responsibleUserId: responsibleUserId || '',
+        },
+      } : {}),
+    };
 
     // Auto-set completedAt when status changes to 'done'
     if (field === 'status' && value === 'done' && !task.completedAt) {
@@ -2245,12 +2260,15 @@ export default function ProjectsPage() {
                           return (
                             <td key={colId} className="px-3 py-2">
                               <select
-                                value={task.responsible || ''}
-                                onChange={(e) => updateTask(project.id, task.id, 'responsible', e.target.value)}
+                                value={task.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === task.responsible)?.id || ''}
+                                onChange={(e) => {
+                                  const user = registeredUsers.find(item => item.id === e.target.value);
+                                  updateTask(project.id, task.id, 'responsible', user?.name || '', e.target.value);
+                                }}
                                 className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
                               >
                                 <option value="">Не назначен</option>
-                                {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
+                                {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
                               </select>
                             </td>
                           );
@@ -2520,9 +2538,9 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
-                <select id="t_responsible" defaultValue={editingTask.task.responsible || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                <select id="t_responsible" defaultValue={editingTask.task.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === editingTask.task.responsible)?.id || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
                   <option value="">Не назначен</option>
-                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
+                  {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
                 </select>
               </div>
               <div>
@@ -2543,7 +2561,8 @@ export default function ProjectsPage() {
                   const receivedAt = (document.getElementById('t_received') as HTMLInputElement).value;
                   const deadline = (document.getElementById('t_deadline') as HTMLInputElement).value;
                   const status = (document.getElementById('t_status') as HTMLSelectElement).value;
-                  const responsible = (document.getElementById('t_responsible') as HTMLSelectElement).value;
+                  const responsibleUserId = (document.getElementById('t_responsible') as HTMLSelectElement).value;
+                  const responsible = registeredUsers.find(user => user.id === responsibleUserId)?.name || '';
                   const engineer = (document.getElementById('t_engineer') as HTMLInputElement).value;
                   const updatedTask: Task = {
                     ...editingTask.task,
@@ -2553,6 +2572,10 @@ export default function ProjectsPage() {
                     status: status as TaskStatus,
                     responsible,
                     engineer,
+                    customFields: {
+                      ...(editingTask.task.customFields || {}),
+                      __responsibleUserId: responsibleUserId,
+                    },
                     completedAt: status === 'done'
                       ? editingTask.task.completedAt || new Date().toISOString().split('T')[0]
                       : undefined,

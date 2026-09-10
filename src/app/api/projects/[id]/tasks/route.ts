@@ -5,6 +5,12 @@ import { prisma } from '@/lib/prisma';
 import { getUserProjectRole } from '@/lib/project-permissions';
 import { emailTemplates, sendEmail } from '@/lib/email';
 
+const responsibleUserIdFrom = (customFields: unknown) => {
+  if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
+  const value = (customFields as Record<string, unknown>).__responsibleUserId;
+  return typeof value === 'string' && value ? value : null;
+};
+
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -57,10 +63,15 @@ export async function POST(
 
     try {
       if (task.responsible) {
+        const responsibleUserId = responsibleUserIdFrom(task.customFields);
         const [project, responsibleUser] = await Promise.all([
           prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
           prisma.user.findFirst({
-            where: { name: task.responsible, status: 'active', isBlocked: false },
+            where: {
+              ...(responsibleUserId ? { id: responsibleUserId } : { name: task.responsible }),
+              status: 'active',
+              isBlocked: false,
+            },
             select: { email: true },
           }),
         ]);

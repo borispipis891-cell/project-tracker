@@ -35,7 +35,11 @@ export async function GET(
 
     const members = await prisma.projectMember.findMany({
       where: { projectId },
-      include: {
+      select: {
+        id: true,
+        role: true,
+        projectId: true,
+        userId: true,
         User: {
           select: {
             id: true,
@@ -46,7 +50,13 @@ export async function GET(
       },
     });
 
-    return NextResponse.json(members);
+    return NextResponse.json(members.map(member => ({
+      id: member.id,
+      role: member.role,
+      projectId: member.projectId,
+      userId: member.userId,
+      user: member.User,
+    })));
   } catch (error) {
     console.error('Error fetching members:', error);
     return NextResponse.json(
@@ -188,6 +198,7 @@ export async function POST(
         userId: invitedUser.id,
         projectId,
       },
+      select: { id: true },
     });
 
     if (existingMember) {
@@ -204,7 +215,11 @@ export async function POST(
         projectId,
         role,
       },
-      include: {
+      select: {
+        id: true,
+        role: true,
+        projectId: true,
+        userId: true,
         User: {
           select: {
             id: true,
@@ -246,7 +261,13 @@ export async function POST(
       },
     });
 
-    return NextResponse.json(member);
+    return NextResponse.json({
+      id: member.id,
+      role: member.role,
+      projectId: member.projectId,
+      userId: member.userId,
+      user: member.User,
+    });
   } catch (error) {
     console.error('Error inviting member:', error);
     return NextResponse.json(

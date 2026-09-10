@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       include: {
         ProjectMember: {
           where: { userId: currentUser.id },
+          select: { role: true },
         },
       },
     });
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
           projectId,
           userId: invitedUser.id,
         },
+        select: { id: true },
       });
 
       if (existingMember) {
@@ -94,6 +96,7 @@ export async function POST(request: Request) {
           userId: invitedUser.id,
           role,
         },
+        select: { id: true },
       });
 
       return NextResponse.json({

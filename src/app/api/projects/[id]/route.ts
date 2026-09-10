@@ -210,7 +210,8 @@ export async function PUT(
         // Почтовые уведомления не являются частью сохранения проекта.
         const members = await prisma.projectMember.findMany({
           where: { projectId },
-          include: {
+          select: {
+            userId: true,
             User: {
               select: {
                 id: true,

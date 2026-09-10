@@ -39,6 +39,7 @@ export async function POST(request: Request) {
           where: {
             userId: currentUser.id,
           },
+          select: { id: true },
         },
       },
     });

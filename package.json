@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma db execute --file prisma/migrations/20260910_fix_project_member_created_at/migration.sql --schema prisma/schema.prisma && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "check": "node check-setup.js",

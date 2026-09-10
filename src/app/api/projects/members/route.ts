@@ -39,7 +39,10 @@ export async function GET(request: Request) {
           },
         },
         ProjectMember: {
-          include: {
+          select: {
+            id: true,
+            userId: true,
+            role: true,
             User: {
               select: {
                 id: true,
@@ -64,7 +67,7 @@ export async function GET(request: Request) {
       email: m.User.email,
       avatar: null,
       role: m.role,
-      addedAt: m.createdAt,
+      addedAt: null,
     }));
 
     return NextResponse.json({
@@ -104,8 +107,10 @@ export async function DELETE(request: Request) {
     // Получаем участника
     const member = await prisma.projectMember.findUnique({
       where: { id: memberId },
-      include: {
-        Project: true,
+      select: {
+        id: true,
+        userId: true,
+        Project: { select: { ownerId: true } },
       },
     });
 
@@ -131,6 +136,7 @@ export async function DELETE(request: Request) {
 
     await prisma.projectMember.delete({
       where: { id: memberId },
+      select: { id: true },
     });
 
     return NextResponse.json({ message: "Участник удалён из проекта" });
@@ -177,8 +183,9 @@ export async function PATCH(request: Request) {
     // Получаем участника
     const member = await prisma.projectMember.findUnique({
       where: { id: memberId },
-      include: {
-        Project: true,
+      select: {
+        id: true,
+        Project: { select: { ownerId: true } },
       },
     });
 
@@ -197,6 +204,7 @@ export async function PATCH(request: Request) {
     await prisma.projectMember.update({
       where: { id: memberId },
       data: { role },
+      select: { id: true },
     });
 
     return NextResponse.json({ message: "Роль обновлена" });

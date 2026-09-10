@@ -95,6 +95,7 @@ export async function POST(request: Request) {
         projectId: invitation.projectId,
         userId: currentUser.id,
       },
+      select: { id: true },
     });
 
     if (existingMember) {
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
         userId: currentUser.id,
         role: invitation.role,
       },
+      select: { id: true },
     });
 
     // Обновляем статус приглашения

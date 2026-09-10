@@ -27,6 +27,7 @@ export async function DELETE(
               where: {
                 User: { email: session.user.email },
               },
+              select: { role: true },
             },
             User: true,
           },

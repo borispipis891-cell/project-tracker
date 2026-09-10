@@ -45,11 +45,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
+    const cookieTheme = document.cookie
+      .split('; ')
+      .find(item => item.startsWith('projectTrackerTheme='))
+      ?.split('=')[1];
+    const savedTheme = localStorage.getItem('projectTrackerTheme') || localStorage.getItem('theme') || cookieTheme;
     const selected: Theme = savedTheme === 'dark' || savedTheme === 'palette'
       ? savedTheme
       : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     setTheme(selected);
+    localStorage.setItem('projectTrackerTheme', selected);
+    document.cookie = `projectTrackerTheme=${selected}; path=/; max-age=31536000; SameSite=Lax`;
     document.documentElement.classList.toggle('dark', selected === 'dark');
     document.documentElement.classList.toggle('theme-palette', selected === 'palette');
   }, []);
@@ -64,7 +70,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const toggleTheme = () => {
     const nextTheme: Theme = theme === 'light' ? 'dark' : theme === 'dark' ? 'palette' : 'light';
     setTheme(nextTheme);
-    localStorage.setItem('theme', nextTheme);
+    localStorage.setItem('projectTrackerTheme', nextTheme);
+    document.cookie = `projectTrackerTheme=${nextTheme}; path=/; max-age=31536000; SameSite=Lax`;
     document.documentElement.classList.toggle('dark', nextTheme === 'dark');
     document.documentElement.classList.toggle('theme-palette', nextTheme === 'palette');
   };

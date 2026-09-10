@@ -24,6 +24,7 @@ export async function GET(request: Request) {
 
     // Все авторизованные пользователи видят все проекты.
     const projects = await prisma.project.findMany({
+      where: { deletedAt: null },
       include: {
         User: {
           select: {

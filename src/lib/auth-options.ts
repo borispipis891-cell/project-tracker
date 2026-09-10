@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
 import { verifyPassword } from "./auth-helpers";
+import { isAdminEmail } from "./admin";
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -45,7 +46,7 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           name: user.name,
           email: user.email,
-          role: user.role,
+          role: isAdminEmail(user.email) ? "admin" : "user",
         };
       },
     }),
@@ -54,8 +55,9 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role;
       }
+      // Admin access is tied to one account, regardless of stale roles in the DB/JWT.
+      token.role = isAdminEmail(token.email) ? "admin" : "user";
       return token;
     },
     async session({ session, token }) {

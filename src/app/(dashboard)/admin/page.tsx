@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { ADMIN_EMAIL } from '@/lib/admin';
 
 type UserRole = 'admin' | 'manager' | 'engineer' | 'viewer' | 'none';
 
@@ -21,8 +22,6 @@ interface User {
   createdAt: string;
   status: 'active' | 'pending' | 'blocked';
 }
-
-const CURRENT_USER = 'Борис'; // Admin user
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Администратор',
@@ -91,7 +90,7 @@ export default function AdminPage() {
         {
           id: '1',
           name: 'Борис',
-          email: 'boris@example.com',
+          email: ADMIN_EMAIL,
           role: 'admin',
           permissions: DEFAULT_PERMISSIONS.admin,
           createdAt: new Date().toISOString(),
@@ -250,7 +249,7 @@ export default function AdminPage() {
                       <select
                         value={user.role}
                         onChange={(e) => changeUserRole(user.id, e.target.value as UserRole)}
-                        disabled={user.name === CURRENT_USER}
+                        disabled={user.email.toLowerCase() === ADMIN_EMAIL}
                         className="text-xs px-2 py-1 rounded border border-gray-300 cursor-pointer outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {Object.entries(ROLE_LABELS).map(([value, label]) => (
@@ -287,7 +286,7 @@ export default function AdminPage() {
                         >
                           ⚙️
                         </button>
-                        {user.name !== CURRENT_USER && (
+                        {user.email.toLowerCase() !== ADMIN_EMAIL && (
                           <>
                             <button
                               onClick={() => blockUser(user.id)}

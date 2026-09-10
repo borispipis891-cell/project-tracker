@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, createEmailVerificationToken } from "@/lib/auth-helpers";
+import { isAdminEmail } from "@/lib/admin";
 
 const registerSchema = z
   .object({
@@ -49,9 +50,7 @@ export async function POST(request: Request) {
     console.log('[REGISTER] Hashing password...');
     const passwordHash = await hashPassword(password);
 
-    // Проверяем количество пользователей - первый становится админом
-    const userCount = await prisma.user.count();
-    const isFirstUser = userCount === 0;
+    const isAdmin = isAdminEmail(normalizedEmail);
 
     console.log('[REGISTER] Creating user and verification token in transaction...');
     let userId: string;
@@ -67,7 +66,7 @@ export async function POST(request: Request) {
             password: passwordHash,
             emailVerified: false,
             isBlocked: false,
-            role: isFirstUser ? 'admin' : 'user',
+            role: isAdmin ? 'admin' : 'user',
             status: 'active',
             permissions: {},
           },
@@ -108,7 +107,7 @@ export async function POST(request: Request) {
 
     const isDevelopment = process.env.NODE_ENV === 'development';
     const response: { message: string; verifyUrl?: string } = {
-      message: isFirstUser
+      message: isAdmin
         ? "Регистрация успешна! Вы назначены администратором. Проверьте email для подтверждения."
         : "Регистрация успешна! Проверьте email для подтверждения.",
     };

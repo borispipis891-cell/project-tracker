@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ReactNode } from 'react';
+import { isAdminEmail } from '@/lib/admin';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<any>(null);
@@ -67,6 +68,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+  const isAdmin = isAdminEmail(session.user?.email);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -155,7 +157,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             })}
 
             {/* Admin section */}
-            {session.user?.role === 'admin' && (
+            {isAdmin && (
               <>
                 {!sidebarCollapsed && (
                   <div className="pt-4 pb-2">
@@ -231,7 +233,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             })}
 
             {/* Admin section */}
-            {session.user?.role === 'admin' && (
+            {isAdmin && (
               <>
                 <div className="pt-4 pb-2">
                   <div className="px-4 text-xs font-semibold text-gray-500 uppercase">

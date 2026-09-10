@@ -8,6 +8,7 @@ import { migrateFromLocalStorage } from '@/lib/migrateLocalStorage';
 import FileUpload from '@/components/FileUpload';
 import ColorPicker from '@/components/ColorPicker';
 import TagInput from '@/components/TagInput';
+import { isAdminEmail } from '@/lib/admin';
 
 type ProjectStatus = 'new' | 'progress' | 'done' | 'blocked' | 'waiting';
 type TaskStatus = 'not_started' | 'progress' | 'blocked' | 'review' | 'done';
@@ -102,50 +103,6 @@ interface StoredUser {
 
 const TODAY = new Date();
 TODAY.setHours(0, 0, 0, 0);
-const CURRENT_USER = 'Борис';
-
-const getCurrentUserPermissions = () => {
-  const usersJson = localStorage.getItem('users');
-  if (!usersJson) {
-    // Default admin permissions
-    return {
-      canCreate: true,
-      canEdit: true,
-      canDelete: true,
-      canExport: true,
-      canManageColumns: true,
-      canViewAll: true,
-      canInvite: true
-    };
-  }
-
-  const users: StoredUser[] = JSON.parse(usersJson);
-  const currentUser = users.find(u => u.name === CURRENT_USER);
-
-  if (!currentUser || currentUser.status === 'blocked') {
-    return {
-      canCreate: false,
-      canEdit: false,
-      canDelete: false,
-      canExport: false,
-      canManageColumns: false,
-      canViewAll: false,
-      canInvite: false
-    };
-  }
-
-  return currentUser.permissions;
-};
-
-const getCurrentUserRole = (): string => {
-  const usersJson = localStorage.getItem('users');
-  if (!usersJson) return 'admin';
-
-  const users: StoredUser[] = JSON.parse(usersJson);
-  const currentUser = users.find(u => u.name === CURRENT_USER);
-  return currentUser?.role || 'viewer';
-};
-
 const DEMO_PROJECTS: Project[] = [
   {
     id: 1,
@@ -242,13 +199,14 @@ const DEMO_PROJECTS: Project[] = [
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [currentUserName, setCurrentUserName] = useState('');
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [currentUserRole, setCurrentUserRole] = useState<string>('admin');
+  const [currentUserRole, setCurrentUserRole] = useState<string>('user');
   const [permissions, setPermissions] = useState({
     canCreate: true,
     canEdit: true,
-    canDelete: true,
+    canDelete: false,
     canExport: true,
     canManageColumns: true,
     canViewAll: true,
@@ -312,18 +270,21 @@ export default function ProjectsPage() {
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
 
-  // Reload permissions when component mounts or when users change
+  // Use the authenticated account as the only source of admin access.
   useEffect(() => {
-    const updatePermissions = () => {
-      setPermissions(getCurrentUserPermissions());
-      setCurrentUserRole(getCurrentUserRole());
-    };
-
-    updatePermissions();
-
-    // Listen for storage changes (when admin updates permissions)
-    window.addEventListener('storage', updatePermissions);
-    return () => window.removeEventListener('storage', updatePermissions);
+    fetch('/api/auth/session')
+      .then(response => response.json())
+      .then(session => {
+        const admin = isAdminEmail(session?.user?.email);
+        setCurrentUserName(session?.user?.name || session?.user?.email || 'Пользователь');
+        setCurrentUserRole(admin ? 'admin' : 'user');
+        setPermissions(current => ({
+          ...current,
+          canDelete: admin,
+          canInvite: admin,
+        }));
+      })
+      .catch(() => setCurrentUserRole('user'));
   }, []);
 
   // Load data from API and localStorage on mount
@@ -541,14 +502,14 @@ export default function ProjectsPage() {
     // Check permissions first
     if (!permissions.canViewAll) {
       // Engineers and viewers can only see their own projects
-      if (p.responsible !== CURRENT_USER && p.engineer !== CURRENT_USER) {
+      if (p.responsible !== currentUserName && p.engineer !== currentUserName) {
         return false;
       }
     }
 
     switch (activeFilter) {
       case 'mine':
-        return p.responsible === CURRENT_USER;
+        return p.responsible === currentUserName;
       case 'overdue':
         return (daysUntil(p.deadline) ?? 0) < 0;
       case 'week':
@@ -569,7 +530,7 @@ export default function ProjectsPage() {
     if (!permissions.canEdit) return false;
     if (currentUserRole === 'engineer') {
       // Engineers can only edit projects where they are responsible or engineer
-      return project.responsible === CURRENT_USER || project.engineer === CURRENT_USER;
+      return project.responsible === currentUserName || project.engineer === currentUserName;
     }
     return true;
   };
@@ -1375,11 +1336,6 @@ export default function ProjectsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Banner */}
-      <div className="bg-blue-50 border-b border-blue-200 text-blue-800 text-xs py-2 px-5 text-center">
-        All changes are automatically saved in the browser
-      </div>
-
       {/* Topbar */}
       <div className="bg-white border-b border-gray-200 px-5 py-3 sticky top-0 z-20 flex items-center gap-3 flex-wrap">
         <div className="font-bold text-blue-600 text-base">◆ Tracker</div>
@@ -1664,12 +1620,12 @@ export default function ProjectsPage() {
             {showUserMenu && (
               <div className="absolute right-0 top-10 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-30">
                 <div className="px-3 py-2 border-b border-gray-200">
-                  <div className="font-semibold text-sm">{CURRENT_USER}</div>
+                  <div className="font-semibold text-sm">{currentUserName}</div>
                   <div className="text-xs text-gray-500">
                     Роль: {currentUserRole === 'admin' ? 'Администратор' :
                            currentUserRole === 'manager' ? 'Менеджер' :
                            currentUserRole === 'engineer' ? 'Инженер' :
-                           currentUserRole === 'viewer' ? 'Наблюдатель' : 'Нет прав'}
+                           currentUserRole === 'viewer' ? 'Наблюдатель' : 'Пользователь'}
                   </div>
                 </div>
                 {currentUserRole === 'admin' && (

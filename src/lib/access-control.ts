@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { isAdminEmail } from '@/lib/admin';
 
 /**
  * Проверка, является ли пользователь администратором
@@ -6,9 +7,9 @@ import { prisma } from '@/lib/prisma';
 export async function isAdmin(userId: string): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { role: true },
+    select: { email: true },
   });
-  return user?.role === 'admin';
+  return isAdminEmail(user?.email);
 }
 
 /**

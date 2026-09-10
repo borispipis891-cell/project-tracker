@@ -4,12 +4,13 @@ import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 import crypto from 'crypto';
+import { isAdminEmail } from '@/lib/admin';
 
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!session?.user || !isAdminEmail(session.user.email)) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 403 }

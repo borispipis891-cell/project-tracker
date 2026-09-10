@@ -28,6 +28,7 @@ export async function GET() {
 
     // Every authenticated user sees every project.
     const projects = await prisma.project.findMany({
+      where: { deletedAt: null },
       include: {
         User: {
           select: {
@@ -138,6 +139,30 @@ export async function POST(request: Request) {
       color: body.color || '#3B82F6',
       tags: body.tags || [],
     };
+
+    // Повторный POST с теми же реквизитами вскоре после создания обычно
+    // означает повторный клик или сетевой retry. Не создаём ещё одну копию.
+    const recentDuplicate = await prisma.project.findFirst({
+      where: {
+        ownerId: currentUser.id,
+        deletedAt: null,
+        name: projectData.name,
+        receivedAt: projectData.receivedAt,
+        deadline: projectData.deadline,
+        customer: projectData.customer,
+        pss: projectData.pss,
+        reg: projectData.reg,
+        createdAt: { gte: new Date(Date.now() - 30_000) },
+      },
+      select: { id: true },
+    });
+
+    if (recentDuplicate) {
+      return NextResponse.json(
+        { error: 'Такой проект уже был создан. Повторный запрос отменён.' },
+        { status: 409 },
+      );
+    }
 
     console.log('[CREATE_PROJECT] Creating with data:', JSON.stringify(projectData, null, 2));
 

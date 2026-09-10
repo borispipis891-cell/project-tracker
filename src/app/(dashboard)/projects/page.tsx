@@ -240,6 +240,7 @@ export default function ProjectsPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [newProjectColor, setNewProjectColor] = useState('#3B82F6');
   const [newProjectTags, setNewProjectTags] = useState<string[]>([]);
+  const [projectSubmitting, setProjectSubmitting] = useState(false);
   const [editingTask, setEditingTask] = useState<{ projectId: number; task: Task } | null>(null);
   const [showProjectComments, setShowProjectComments] = useState<number | null>(null);
   const [showTaskComments, setShowTaskComments] = useState<{ projectId: number; taskId: number } | null>(null);
@@ -288,6 +289,7 @@ export default function ProjectsPage() {
   const topbarRef = useRef<HTMLDivElement>(null);
   const projectSaveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const taskSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const projectSubmittingRef = useRef(false);
 
   const closeTopbarMenus = useCallback(() => {
     setShowColumnSelector(false);
@@ -1149,11 +1151,15 @@ export default function ProjectsPage() {
   };
 
   const createProject = async () => {
+    if (projectSubmittingRef.current) return;
     const name = (document.getElementById('f_name') as HTMLInputElement).value.trim();
     if (!name) {
       alert('Укажите название проекта');
       return;
     }
+
+    projectSubmittingRef.current = true;
+    setProjectSubmitting(true);
 
     const projectData = {
       name,
@@ -1212,6 +1218,9 @@ export default function ProjectsPage() {
       console.error('Failed to save project:', error);
       alert('Ошибка сохранения проекта');
       return;
+    } finally {
+      projectSubmittingRef.current = false;
+      setProjectSubmitting(false);
     }
 
     setShowModal(false);
@@ -2435,9 +2444,10 @@ export default function ProjectsPage() {
               </button>
               <button
                 onClick={createProject}
-                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                disabled={projectSubmitting}
+                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {editingProject ? 'Сохранить' : 'Создать проект'}
+                {projectSubmitting ? 'Сохранение...' : editingProject ? 'Сохранить' : 'Создать проект'}
               </button>
             </div>
           </div>

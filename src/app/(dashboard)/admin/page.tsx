@@ -24,6 +24,7 @@ export default function AdminPage() {
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [sending, setSending] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
+  const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -103,6 +104,23 @@ export default function AdminPage() {
     }
   };
 
+  const cleanupDuplicateProjects = async () => {
+    if (!confirm('Удалить копии проектов, созданные с одинаковыми реквизитами в течение пяти минут? Будет сохранён экземпляр с наибольшим количеством задач.')) return;
+    setCleaningDuplicates(true);
+    try {
+      const response = await fetch('/api/admin/projects/deduplicate', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Ошибка удаления дубликатов');
+      alert(data.deleted > 0
+        ? `Удалено дубликатов: ${data.deleted}`
+        : 'Дубликаты проектов не найдены');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка удаления дубликатов');
+    } finally {
+      setCleaningDuplicates(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -111,6 +129,9 @@ export default function AdminPage() {
           <p className="mt-1 text-sm text-gray-500">Все зарегистрированные аккаунты системы</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={cleanupDuplicateProjects} disabled={cleaningDuplicates} className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+            {cleaningDuplicates ? 'Очистка...' : 'Удалить дубликаты проектов'}
+          </button>
           <button onClick={testEmail} disabled={testingEmail} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50">
             {testingEmail ? 'Проверка...' : 'Проверить email'}
           </button>

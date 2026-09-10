@@ -238,6 +238,31 @@ export async function DELETE(
       },
     });
 
+    if (task.responsible) {
+      try {
+        const [project, responsibleUser] = await Promise.all([
+          prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
+          prisma.user.findFirst({
+            where: { name: task.responsible, status: 'active', isBlocked: false },
+            select: { email: true },
+          }),
+        ]);
+
+        if (project && responsibleUser) {
+          const emailData = emailTemplates.taskUpdate({
+            projectName: escapeHtml(project.name),
+            taskTitle: escapeHtml(task.title),
+            changes: 'Задача удалена',
+            updatedBy: escapeHtml(currentUser.name || currentUser.email),
+            projectUrl: `${appUrl()}/projects?project=${projectId}`,
+          });
+          await sendEmail({ to: responsibleUser.email, ...emailData });
+        }
+      } catch (emailError) {
+        console.error('[TASK_DELETE_EMAIL] Failed:', emailError);
+      }
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting task:', error);

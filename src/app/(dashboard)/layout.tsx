@@ -50,7 +50,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       .find(item => item.startsWith('projectTrackerTheme='))
       ?.split('=')[1];
     const savedTheme = localStorage.getItem('projectTrackerTheme') || localStorage.getItem('theme') || cookieTheme;
-    const selected: Theme = savedTheme === 'dark' || savedTheme === 'palette'
+    const selected: Theme = savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'palette'
       ? savedTheme
       : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     setTheme(selected);
@@ -130,6 +130,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {/* User Menu */}
             <div className="flex items-center space-x-2 sm:space-x-4">
               <button
+                type="button"
                 onClick={toggleTheme}
                 className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
                 title={theme === 'light' ? 'Включить тёмную тему' : theme === 'dark' ? 'Включить тему «Песок и индиго»' : 'Включить светлую тему'}

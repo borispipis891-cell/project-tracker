@@ -19,20 +19,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
     }
 
-    // Get projects where user is owner or member
+    // Every authenticated user sees every project.
     const projects = await prisma.project.findMany({
-      where: {
-        OR: [
-          { ownerId: currentUser.id },
-          {
-            ProjectMember: {
-              some: {
-                userId: currentUser.id,
-              },
-            },
-          },
-        ],
-      },
       include: {
         User: {
           select: {
@@ -70,8 +58,6 @@ export async function GET() {
     // Add user role info to each project
     const projectsWithRole = projects.map((project) => {
       const isOwner = project.ownerId === currentUser.id;
-      const memberRole = project.ProjectMember[0]?.role;
-
       return {
         ...project,
         owner: project.User, // Add owner alias for frontend compatibility
@@ -80,8 +66,8 @@ export async function GET() {
         attachments: project.Attachment, // Add attachments alias
         history: project.ProjectHistory, // Add history alias
         members: project.ProjectMember, // Add members alias
-        userRole: isOwner ? 'owner' : memberRole,
-        canEdit: isOwner || memberRole === 'editor',
+        userRole: isOwner ? 'owner' : 'editor',
+        canEdit: true,
         canDelete: isOwner,
         canInvite: isOwner,
       };

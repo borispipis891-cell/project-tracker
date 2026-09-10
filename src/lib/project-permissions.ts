@@ -3,12 +3,7 @@ import { prisma } from "./prisma";
 export async function getUserProjectRole(userId: string, projectId: number) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: {
-      ProjectMember: {
-        where: { userId },
-        select: { role: true },
-      },
-    },
+    select: { ownerId: true },
   });
 
   if (!project) {
@@ -16,13 +11,13 @@ export async function getUserProjectRole(userId: string, projectId: number) {
   }
 
   const isOwner = project.ownerId === userId;
-  const memberRole = project.ProjectMember[0]?.role;
 
   return {
     isOwner,
-    role: isOwner ? 'owner' : memberRole || null,
-    canView: isOwner || !!memberRole,
-    canEdit: isOwner || memberRole === 'editor',
+    role: isOwner ? 'owner' : 'editor',
+    // Every authenticated user can work with every project.
+    canView: true,
+    canEdit: true,
     canDelete: isOwner,
     canInvite: isOwner,
     canManageTeam: isOwner,

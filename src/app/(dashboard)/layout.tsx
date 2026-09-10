@@ -118,7 +118,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
       <div className="flex pt-16">
         {/* Desktop Sidebar */}
-        <aside className={`hidden lg:block bg-white shadow-sm h-[calc(100vh-4rem)] border-r fixed left-0 top-16 overflow-visible transition-all duration-300 ${
+        <aside className={`hidden lg:block bg-white shadow-sm h-[calc(100vh-4rem)] border-r fixed left-0 top-16 z-40 overflow-visible transition-all duration-300 ${
           sidebarCollapsed ? 'w-16' : 'w-64'
         }`}>
           {/* Collapse/Expand Button */}
@@ -272,7 +272,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </aside>
 
         {/* Main Content */}
-        <main className={`flex-1 p-4 sm:p-6 lg:p-8 transition-all duration-300 ${
+        <main className={`min-w-0 flex-1 p-4 sm:p-6 lg:p-8 transition-all duration-300 ${
           sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
         }`}>
           {children}

@@ -58,16 +58,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Проект не найден" }, { status: 404 });
     }
 
-    const isOwner = project.ownerId === currentUser.id;
-    const isMember = project.ProjectMember.some(m => m.userId === currentUser.id);
-
-    if (!isOwner && !isMember) {
-      return NextResponse.json(
-        { error: "Нет доступа к проекту" },
-        { status: 403 }
-      );
-    }
-
     // Формируем список участников
     const members = project.ProjectMember.map(m => ({
       id: m.id,

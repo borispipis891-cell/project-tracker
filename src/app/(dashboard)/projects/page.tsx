@@ -1466,7 +1466,7 @@ export default function ProjectsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Topbar */}
-      <div ref={topbarRef} className="bg-white border-b border-gray-200 px-5 py-3 sticky top-0 z-20 flex items-center gap-3 flex-wrap">
+      <div ref={topbarRef} className="bg-white border-b border-gray-200 px-5 py-3 sticky top-16 z-10 flex items-center gap-3 flex-wrap">
         <div className="font-bold text-blue-600 text-base">◆ Tracker</div>
         <div className="font-semibold text-base">Проекты</div>
         <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 text-sm">Статистика</Link>
@@ -2057,7 +2057,7 @@ export default function ProjectsPage() {
                               className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
                             >
                               <option value="">Не назначен</option>
-                              {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                              {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
                             </select>
                           </td>
                         );
@@ -2250,7 +2250,7 @@ export default function ProjectsPage() {
                                 className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
                               >
                                 <option value="">Не назначен</option>
-                                {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                                {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
                               </select>
                             </td>
                           );
@@ -2431,7 +2431,7 @@ export default function ProjectsPage() {
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
                 <select id="f_responsible" defaultValue={editingProject?.responsible || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
                   <option value="">Не назначен</option>
-                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
                 </select>
               </div>
               <div>
@@ -2527,7 +2527,7 @@ export default function ProjectsPage() {
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
                 <select id="t_responsible" defaultValue={editingTask.task.responsible || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
                   <option value="">Не назначен</option>
-                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name} — {user.email}</option>)}
+                  {registeredUsers.map(user => <option key={user.id} value={user.name}>{user.name}</option>)}
                 </select>
               </div>
               <div>

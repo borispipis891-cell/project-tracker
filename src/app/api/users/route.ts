@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
+import { ADMIN_EMAIL } from '@/lib/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,7 @@ export async function GET() {
       where: {
         status: 'active',
         isBlocked: false,
+        email: { not: ADMIN_EMAIL },
       },
       orderBy: {
         name: 'asc',

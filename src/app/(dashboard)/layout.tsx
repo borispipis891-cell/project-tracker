@@ -4,16 +4,18 @@ import { redirect } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, Palette } from 'lucide-react';
 import { ReactNode } from 'react';
 import { isAdminEmail } from '@/lib/admin';
+
+type Theme = 'light' | 'dark' | 'palette';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [darkTheme, setDarkTheme] = useState(false);
+  const [theme, setTheme] = useState<Theme>('light');
   const pathname = usePathname();
 
   useEffect(() => {
@@ -44,11 +46,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
-    const enabled = savedTheme
-      ? savedTheme === 'dark'
-      : window.matchMedia('(prefers-color-scheme: dark)').matches;
-    setDarkTheme(enabled);
-    document.documentElement.classList.toggle('dark', enabled);
+    const selected: Theme = savedTheme === 'dark' || savedTheme === 'palette'
+      ? savedTheme
+      : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    setTheme(selected);
+    document.documentElement.classList.toggle('dark', selected === 'dark');
+    document.documentElement.classList.toggle('theme-palette', selected === 'palette');
   }, []);
 
   // Save sidebar state to localStorage
@@ -59,10 +62,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   };
 
   const toggleTheme = () => {
-    const enabled = !darkTheme;
-    setDarkTheme(enabled);
-    localStorage.setItem('theme', enabled ? 'dark' : 'light');
-    document.documentElement.classList.toggle('dark', enabled);
+    const nextTheme: Theme = theme === 'light' ? 'dark' : theme === 'dark' ? 'palette' : 'light';
+    setTheme(nextTheme);
+    localStorage.setItem('theme', nextTheme);
+    document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+    document.documentElement.classList.toggle('theme-palette', nextTheme === 'palette');
   };
 
   if (loading) {
@@ -121,10 +125,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               <button
                 onClick={toggleTheme}
                 className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
-                title={darkTheme ? 'Включить светлую тему' : 'Включить тёмную тему'}
-                aria-label={darkTheme ? 'Включить светлую тему' : 'Включить тёмную тему'}
+                title={theme === 'light' ? 'Включить тёмную тему' : theme === 'dark' ? 'Включить тему «Песок и индиго»' : 'Включить светлую тему'}
+                aria-label="Переключить тему оформления"
               >
-                {darkTheme ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                {theme === 'light' ? <Moon className="h-5 w-5" /> : theme === 'dark' ? <Palette className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
               </button>
               <span className="text-sm text-gray-700 hidden sm:block truncate max-w-[150px]">
                 {session.user?.name || session.user?.email}

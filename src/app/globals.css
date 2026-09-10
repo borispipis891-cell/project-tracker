@@ -60,6 +60,79 @@ body {
   background-color: #374151;
 }
 
+/* Тема «Песок и индиго» по пользовательской палитре */
+.theme-palette {
+  color-scheme: dark;
+}
+
+.theme-palette body,
+.theme-palette .bg-gray-50 {
+  background-color: #102544;
+  color: #f8f1e5;
+}
+
+.theme-palette .bg-white {
+  background-color: #1e3a66;
+}
+
+.theme-palette .bg-gray-100,
+.theme-palette .bg-gray-200 {
+  background-color: #415478;
+}
+
+.theme-palette .text-gray-900,
+.theme-palette .text-gray-800,
+.theme-palette .text-gray-700 {
+  color: #f8f1e5;
+}
+
+.theme-palette .text-gray-600,
+.theme-palette .text-gray-500,
+.theme-palette .text-gray-400 {
+  color: #c8d0dc;
+}
+
+.theme-palette .border,
+.theme-palette .border-b,
+.theme-palette .border-r,
+.theme-palette .border-t,
+.theme-palette .border-gray-200,
+.theme-palette .border-gray-300 {
+  border-color: #526488;
+}
+
+.theme-palette input:not([type='color']),
+.theme-palette select,
+.theme-palette textarea {
+  border-color: #526488;
+  background-color: #162f55;
+  color: #f8f1e5;
+}
+
+.theme-palette .bg-blue-600,
+.theme-palette .bg-indigo-600 {
+  background-color: #c78a3b;
+}
+
+.theme-palette .hover\:bg-blue-700:hover,
+.theme-palette .hover\:bg-indigo-700:hover {
+  background-color: #a96f2d;
+}
+
+.theme-palette .text-blue-600,
+.theme-palette .text-indigo-600 {
+  color: #efc77f;
+}
+
+.theme-palette .bg-blue-50 {
+  background-color: #2d4974;
+}
+
+.theme-palette .hover\:bg-gray-50:hover,
+.theme-palette .hover\:bg-gray-100:hover {
+  background-color: #415478;
+}
+
 /* Компактные, единообразные поля ввода на страницах авторизации и таблицы */
 .field {
   @apply w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink-900 outline-none transition-colors;

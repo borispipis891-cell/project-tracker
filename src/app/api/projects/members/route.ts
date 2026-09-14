@@ -52,6 +52,10 @@ export async function GET(request: Request) {
             },
           },
         },
+        Task: {
+          where: { deletedAt: null },
+          select: { engineer: true },
+        },
       },
     });
 
@@ -70,9 +74,34 @@ export async function GET(request: Request) {
       addedAt: null,
     }));
 
+    const engineerNames = Array.from(new Set(
+      [project.engineer, ...project.Task.map(task => task.engineer)]
+        .map(name => name?.trim())
+        .filter((name): name is string => Boolean(name))
+    ));
+    const engineerUsers = engineerNames.length
+      ? await prisma.user.findMany({
+          where: { name: { in: engineerNames }, status: 'active', isBlocked: false },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const usersByName = new Map(engineerUsers.map(user => [user.name, user]));
+    const engineers = engineerNames.map(name => {
+      const user = usersByName.get(name);
+      return {
+        id: user?.id || `engineer:${name}`,
+        userId: user?.id || null,
+        name,
+        email: user?.email || null,
+        avatar: null,
+        role: 'engineer',
+      };
+    });
+
     return NextResponse.json({
       owner: project.User,
       members,
+      engineers,
     });
   } catch (error) {
     console.error("[GET_MEMBERS] Error:", error);

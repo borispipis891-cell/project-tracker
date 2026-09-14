@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Users, UserPlus, Mail, Shield, Trash2, Crown, Edit2 } from 'lucide-react';
+import { Users, UserPlus, Mail, Trash2, Crown, Wrench } from 'lucide-react';
 
 interface Member {
   id: string;
@@ -21,12 +21,22 @@ interface Owner {
   avatar: string | null;
 }
 
+interface Engineer {
+  id: string;
+  userId: string | null;
+  name: string;
+  email: string | null;
+  avatar: string | null;
+  role: 'engineer';
+}
+
 export default function ProjectTeamPage({ params }: { params: { id: string } }) {
   const { data: session } = useSession();
   const projectId = parseInt(params.id);
 
   const [owner, setOwner] = useState<Owner | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('viewer');
@@ -45,6 +55,7 @@ export default function ProjectTeamPage({ params }: { params: { id: string } }) 
       if (response.ok) {
         setOwner(data.owner);
         setMembers(data.members);
+        setEngineers(data.engineers || []);
       } else {
         setMessage({ type: 'error', text: data.error || 'Ошибка загрузки' });
       }
@@ -165,6 +176,14 @@ export default function ProjectTeamPage({ params }: { params: { id: string } }) 
   }
 
   const isOwner = owner?.email === session?.user?.email;
+  const isEngineer = (userId: string, name: string) => engineers.some(engineer =>
+    (engineer.userId && engineer.userId === userId) || engineer.name === name
+  );
+  const listedUserIds = new Set([owner?.id, ...members.map(member => member.userId)].filter(Boolean));
+  const listedNames = new Set([owner?.name, ...members.map(member => member.name)].filter(Boolean));
+  const standaloneEngineers = engineers.filter(engineer =>
+    (!engineer.userId || !listedUserIds.has(engineer.userId)) && !listedNames.has(engineer.name)
+  );
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -248,7 +267,7 @@ export default function ProjectTeamPage({ params }: { params: { id: string } }) 
       <div className="bg-white rounded-lg shadow">
         <div className="p-6 border-b">
           <h2 className="text-lg font-semibold text-gray-900">
-            Участники ({members.length + 1})
+            Участники ({members.length + 1 + standaloneEngineers.length})
           </h2>
         </div>
 
@@ -266,6 +285,9 @@ export default function ProjectTeamPage({ params }: { params: { id: string } }) 
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {isEngineer(owner.id, owner.name) && (
+                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-800">Инженер</span>
+                )}
                 {getRoleBadge('owner')}
               </div>
             </div>
@@ -287,6 +309,9 @@ export default function ProjectTeamPage({ params }: { params: { id: string } }) 
               </div>
 
               <div className="flex items-center gap-3">
+                {isEngineer(member.userId, member.name) && (
+                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-800">Инженер</span>
+                )}
                 {isOwner ? (
                   <>
                     <select
@@ -312,7 +337,23 @@ export default function ProjectTeamPage({ params }: { params: { id: string } }) 
             </div>
           ))}
 
-          {members.length === 0 && (
+          {/* Инженеры, назначенные в проекте или его задачах, но не добавленные участниками */}
+          {standaloneEngineers.map((engineer) => (
+            <div key={engineer.id} className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-full flex items-center justify-center">
+                  <Wrench className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <div className="font-medium text-gray-900">{engineer.name}</div>
+                  <div className="text-sm text-gray-500">{engineer.email || 'Назначен инженером проекта'}</div>
+                </div>
+              </div>
+              <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-800">Инженер</span>
+            </div>
+          ))}
+
+          {members.length === 0 && standaloneEngineers.length === 0 && (
             <div className="p-12 text-center text-gray-500">
               Пока нет других участников
             </div>

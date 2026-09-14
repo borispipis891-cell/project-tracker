@@ -181,6 +181,29 @@ body {
   color: inherit;
 }
 
+/* Список ответственных следует активной теме, включая нативное меню option. */
+.assignee-select {
+  background-color: #ffffff;
+  color: #374151;
+}
+
+.assignee-select option {
+  background-color: #ffffff;
+  color: #111827;
+}
+
+.dark .assignee-select,
+.dark .assignee-select option {
+  background-color: #111827;
+  color: #f3f4f6;
+}
+
+.theme-palette .assignee-select,
+.theme-palette .assignee-select option {
+  background-color: #162f55;
+  color: #f8f1e5;
+}
+
 .status-chip {
   background-color: var(--status-bg);
   color: var(--status-text);

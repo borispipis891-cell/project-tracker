@@ -18,6 +18,7 @@ interface Task {
   id: number;
   title: string;
   status: TaskStatus;
+  priority: Priority;
   receivedAt: string;
   deadline: string;
   completedAt?: string;
@@ -118,6 +119,8 @@ const applySavedTaskOrder = (project: any): Project => {
   } catch {
     // Ignore an invalid legacy order and use the database order.
   }
+  const priorityOrder: Record<Priority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  tasks.sort((a, b) => priorityOrder[(a.priority || 'medium') as Priority] - priorityOrder[(b.priority || 'medium') as Priority]);
   return { ...project, tasks };
 };
 
@@ -136,9 +139,9 @@ const DEMO_PROJECTS: Project[] = [
     engineer: 'Смирнов А.',
     expanded: false,
     tasks: [
-      { id: 11, title: 'Согласовать монтажную схему', status: 'done', receivedAt: '2026-07-02', deadline: '2026-07-20' },
-      { id: 12, title: 'Заказать направляющие', status: 'progress', receivedAt: '2026-07-10', deadline: '2026-08-15' },
-      { id: 13, title: 'Проверить шахту лифта', status: 'not_started', receivedAt: '', deadline: '2026-08-25' }
+      { id: 11, title: 'Согласовать монтажную схему', status: 'done', priority: 'medium', receivedAt: '2026-07-02', deadline: '2026-07-20' },
+      { id: 12, title: 'Заказать направляющие', status: 'progress', priority: 'medium', receivedAt: '2026-07-10', deadline: '2026-08-15' },
+      { id: 13, title: 'Проверить шахту лифта', status: 'not_started', priority: 'medium', receivedAt: '', deadline: '2026-08-25' }
     ]
   },
   {
@@ -155,8 +158,8 @@ const DEMO_PROJECTS: Project[] = [
     engineer: 'Ковалёв Д.',
     expanded: false,
     tasks: [
-      { id: 21, title: 'Получить архитектурные чертежи', status: 'done', receivedAt: '2026-07-16', deadline: '2026-07-30' },
-      { id: 22, title: 'Расчёт грузоподъёмности', status: 'progress', receivedAt: '', deadline: '2026-08-28' }
+      { id: 21, title: 'Получить архитектурные чертежи', status: 'done', priority: 'medium', receivedAt: '2026-07-16', deadline: '2026-07-30' },
+      { id: 22, title: 'Расчёт грузоподъёмности', status: 'progress', priority: 'medium', receivedAt: '', deadline: '2026-08-28' }
     ]
   },
   {
@@ -173,7 +176,7 @@ const DEMO_PROJECTS: Project[] = [
     engineer: 'Титов П.',
     expanded: false,
     tasks: [
-      { id: 31, title: 'Собрать пакет документов', status: 'progress', receivedAt: '', deadline: '2026-09-10' }
+      { id: 31, title: 'Собрать пакет документов', status: 'progress', priority: 'medium', receivedAt: '', deadline: '2026-09-10' }
     ]
   },
   {
@@ -190,8 +193,8 @@ const DEMO_PROJECTS: Project[] = [
     engineer: 'Смирнов А.',
     expanded: false,
     tasks: [
-      { id: 41, title: 'Проверить машинное помещение', status: 'done', receivedAt: '2026-05-12', deadline: '2026-06-01' },
-      { id: 42, title: 'Пуско-наладка', status: 'not_started', receivedAt: '', deadline: '2026-09-04' }
+      { id: 41, title: 'Проверить машинное помещение', status: 'done', priority: 'medium', receivedAt: '2026-05-12', deadline: '2026-06-01' },
+      { id: 42, title: 'Пуско-наладка', status: 'not_started', priority: 'medium', receivedAt: '', deadline: '2026-09-04' }
     ]
   },
   {
@@ -208,9 +211,9 @@ const DEMO_PROJECTS: Project[] = [
     engineer: 'Ковалёв Д.',
     expanded: true,
     tasks: [
-      { id: 51, title: 'Запросить архитектурные чертежи', status: 'not_started', receivedAt: '2026-07-26', deadline: '2026-08-05' },
-      { id: 52, title: 'Проверить высоту подъёма', status: 'not_started', receivedAt: '', deadline: '2026-09-01' },
-      { id: 53, title: 'Проверить машинное помещение', status: 'not_started', receivedAt: '', deadline: '2026-09-09' }
+      { id: 51, title: 'Запросить архитектурные чертежи', status: 'not_started', priority: 'medium', receivedAt: '2026-07-26', deadline: '2026-08-05' },
+      { id: 52, title: 'Проверить высоту подъёма', status: 'not_started', priority: 'medium', receivedAt: '', deadline: '2026-09-01' },
+      { id: 53, title: 'Проверить машинное помещение', status: 'not_started', priority: 'medium', receivedAt: '', deadline: '2026-09-09' }
     ]
   }
 ];
@@ -242,6 +245,7 @@ export default function ProjectsPage() {
   const [projectSubmitting, setProjectSubmitting] = useState(false);
   const [excelExporting, setExcelExporting] = useState(false);
   const [editingTask, setEditingTask] = useState<{ projectId: number; task: Task } | null>(null);
+  const [creatingTaskForProjectId, setCreatingTaskForProjectId] = useState<number | null>(null);
   const [showProjectComments, setShowProjectComments] = useState<number | null>(null);
   const [showTaskComments, setShowTaskComments] = useState<{ projectId: number; taskId: number } | null>(null);
   const [showProjectHistory, setShowProjectHistory] = useState<number | null>(null);
@@ -544,7 +548,8 @@ export default function ProjectsPage() {
     }
   };
 
-  const deadlineClass = (dateStr: string): string => {
+  const deadlineClass = (dateStr: string, status?: ProjectStatus | TaskStatus): string => {
+    if (status === 'done') return '';
     const days = daysUntil(dateStr);
     if (days === null) return '';
     if (days <= 0) return 'deadline-highlight deadline-overdue';
@@ -889,10 +894,14 @@ export default function ProjectsPage() {
     }
 
     // Update immediately in the UI and combine rapid edits into one API request.
-    setProjects(current => current.map(p => p.id === projectId ? {
-      ...p,
-      tasks: p.tasks.map(t => t.id === taskId ? updatedTask : t),
-    } : p));
+    setProjects(current => current.map(p => {
+      if (p.id !== projectId) return p;
+      const tasks = p.tasks.map(t => t.id === taskId ? updatedTask : t);
+      if (field === 'priority') {
+        tasks.sort((a, b) => PRIORITY_ORDER[a.priority || 'medium'] - PRIORITY_ORDER[b.priority || 'medium']);
+      }
+      return { ...p, tasks };
+    }));
 
     const timerKey = `${projectId}:${taskId}`;
     clearTimeout(taskSaveTimers.current[timerKey]);
@@ -953,25 +962,40 @@ export default function ProjectsPage() {
     }
   };
 
-  const addTask = async (projectId: number) => {
+  const openCreateTaskModal = (projectId: number) => {
     const project = projects.find(p => p.id === projectId);
     if (project && !canEditProject(project)) {
       alert('У вас нет прав для добавления задач к этому проекту');
       return;
     }
 
-    const title = prompt('Название задачи:');
-    if (!title?.trim()) return;
+    setCreatingTaskForProjectId(projectId);
+  };
+
+  const createTask = async () => {
+    if (creatingTaskForProjectId === null) return;
+    const title = (document.getElementById('t_title') as HTMLInputElement).value.trim();
+    if (!title) {
+      alert('Введите название задачи');
+      return;
+    }
+
+    const responsibleUserId = (document.getElementById('t_responsible') as HTMLSelectElement).value;
+    const responsible = registeredUsers.find(user => user.id === responsibleUserId)?.name || '';
 
     const newTask = {
-      title: title.trim(),
-      status: 'not_started' as TaskStatus,
-      receivedAt: '',
-      deadline: '',
+      title,
+      status: (document.getElementById('t_status') as HTMLSelectElement).value as TaskStatus,
+      priority: (document.getElementById('t_priority') as HTMLSelectElement).value as Priority,
+      receivedAt: (document.getElementById('t_received') as HTMLInputElement).value,
+      deadline: (document.getElementById('t_deadline') as HTMLInputElement).value,
+      responsible,
+      engineer: (document.getElementById('t_engineer') as HTMLInputElement).value.trim(),
+      customFields: { __responsibleUserId: responsibleUserId },
     };
 
     try {
-      const response = await fetch(`/api/projects/${projectId}/tasks`, {
+      const response = await fetch(`/api/projects/${creatingTaskForProjectId}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTask),
@@ -984,13 +1008,14 @@ export default function ProjectsPage() {
       }
 
       // Используем созданную задачу напрямую без повторного запроса проекта
-      const createdTask = await response.json();
-      setProjects(projects.map(p =>
-        p.id === projectId ? {
-          ...p,
-          tasks: [...p.tasks, createdTask]
-        } : p
-      ));
+      const createdTask: Task = await response.json();
+      setProjects(current => current.map(p => {
+        if (p.id !== creatingTaskForProjectId) return p;
+        const tasks = [...p.tasks, createdTask];
+        tasks.sort((a, b) => PRIORITY_ORDER[a.priority || 'medium'] - PRIORITY_ORDER[b.priority || 'medium']);
+        return { ...p, tasks };
+      }));
+      setCreatingTaskForProjectId(null);
     } catch (error) {
       console.error('Failed to add task:', error);
       alert('Ошибка добавления задачи');
@@ -1086,12 +1111,61 @@ export default function ProjectsPage() {
     }
   };
 
+  const saveEditedTask = async () => {
+    if (!editingTask) return;
+    const title = (document.getElementById('t_title') as HTMLInputElement).value.trim();
+    if (!title) {
+      alert('Введите название задачи');
+      return;
+    }
+    const status = (document.getElementById('t_status') as HTMLSelectElement).value as TaskStatus;
+    const responsibleUserId = (document.getElementById('t_responsible') as HTMLSelectElement).value;
+    const responsible = registeredUsers.find(user => user.id === responsibleUserId)?.name || '';
+    const updatedTask: Task = {
+      ...editingTask.task,
+      title,
+      receivedAt: (document.getElementById('t_received') as HTMLInputElement).value,
+      deadline: (document.getElementById('t_deadline') as HTMLInputElement).value,
+      status,
+      priority: (document.getElementById('t_priority') as HTMLSelectElement).value as Priority,
+      responsible,
+      engineer: (document.getElementById('t_engineer') as HTMLInputElement).value.trim(),
+      customFields: {
+        ...(editingTask.task.customFields || {}),
+        __responsibleUserId: responsibleUserId,
+      },
+      completedAt: status === 'done'
+        ? editingTask.task.completedAt || new Date().toISOString().split('T')[0]
+        : undefined,
+    };
+
+    try {
+      const response = await fetch(`/api/projects/${editingTask.projectId}/tasks/${editingTask.task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedTask),
+      });
+      if (!response.ok) throw new Error('Не удалось сохранить задачу');
+      const savedTask = await response.json();
+      setProjects(current => current.map(project => {
+        if (project.id !== editingTask.projectId) return project;
+        const tasks = project.tasks.map(task => task.id === editingTask.task.id ? { ...savedTask, comments: task.comments } : task);
+        tasks.sort((a, b) => PRIORITY_ORDER[(a.priority || 'medium') as Priority] - PRIORITY_ORDER[(b.priority || 'medium') as Priority]);
+        return { ...project, tasks };
+      }));
+      setEditingTask(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Не удалось сохранить задачу');
+    }
+  };
+
   const openEditModal = (project: Project) => {
     setEditingProject(project);
     setShowModal(true);
   };
 
   const openEditTaskModal = (projectId: number, task: Task) => {
+    setCreatingTaskForProjectId(null);
     setEditingTask({ projectId, task });
   };
 
@@ -1196,7 +1270,9 @@ export default function ProjectsPage() {
         }
 
         const updated = await response.json();
-        setProjects(projects.map(p => p.id === editingProject.id ? { ...updated, expanded: p.expanded } : p));
+        setProjects(projects.map(p => p.id === editingProject.id
+          ? applySavedTaskOrder({ ...updated, expanded: p.expanded })
+          : p));
       } else {
         // Create new project
         const response = await fetch('/api/projects', {
@@ -1929,7 +2005,7 @@ export default function ProjectsPage() {
                       if (colId === 'deadline') {
                         return (
                           <td key={colId} className="px-3 py-2">
-                            <div className={`rounded-md px-2 py-1 ${deadlineClass(project.deadline)}`}>
+                            <div className={`rounded-md px-2 py-1 ${deadlineClass(project.deadline, project.status)}`}>
                               <input
                                 type="date"
                                 value={project.deadline}
@@ -2026,7 +2102,7 @@ export default function ProjectsPage() {
                                 const user = registeredUsers.find(item => item.id === e.target.value);
                                 updateProject(project.id, 'responsible', user?.name || '', e.target.value);
                               }}
-                              className="text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
+                              className="assignee-select text-sm border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
                             >
                               <option value="">Не назначен</option>
                               {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
@@ -2126,7 +2202,24 @@ export default function ProjectsPage() {
                         if (!isColumnVisible(colId)) return null;
 
                         if (colId === 'priority') {
-                          return <td key={colId}></td>;
+                          const taskPriority = task.priority || 'medium';
+                          return (
+                            <td key={colId} className="px-3 py-2">
+                              <div className={`priority-control flex items-center gap-1 ${getPriorityClass(taskPriority)}`}>
+                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityDotColor(taskPriority)}`}></span>
+                                <select
+                                  value={taskPriority}
+                                  onChange={(e) => updateTask(project.id, task.id, 'priority', e.target.value as Priority)}
+                                  className="priority-select border-none bg-transparent text-xs font-semibold outline-none cursor-pointer"
+                                  aria-label={`Приоритет задачи ${task.title}`}
+                                >
+                                  {Object.entries(PRIORITY_LABELS).map(([key, label]) => (
+                                    <option key={key} value={key}>{label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </td>
+                          );
                         }
 
                         if (colId === 'name') {
@@ -2163,7 +2256,7 @@ export default function ProjectsPage() {
                         if (colId === 'deadline') {
                           return (
                             <td key={colId} className="px-3 py-2">
-                              <div className={`rounded-md px-2 py-1 ${deadlineClass(task.deadline)}`}>
+                              <div className={`rounded-md px-2 py-1 ${deadlineClass(task.deadline, task.status)}`}>
                                 <input
                                   type="date"
                                   value={task.deadline}
@@ -2213,7 +2306,7 @@ export default function ProjectsPage() {
                                   const user = registeredUsers.find(item => item.id === e.target.value);
                                   updateTask(project.id, task.id, 'responsible', user?.name || '', e.target.value);
                                 }}
-                                className="text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
+                                className="assignee-select text-sm text-gray-500 border border-transparent bg-transparent rounded px-1 py-1 hover:border-gray-300 focus:border-blue-600 focus:bg-white outline-none w-full"
                               >
                                 <option value="">Не назначен</option>
                                 {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
@@ -2281,7 +2374,7 @@ export default function ProjectsPage() {
                             {!!task.comments?.length && <span className="ml-1 text-[10px] font-bold">{task.comments.length}</span>}
                           </button>
                           <button
-                            onClick={() => setEditingTask({ projectId: project.id, task })}
+                            onClick={() => openEditTaskModal(project.id, task)}
                             className="text-blue-600 hover:text-blue-800 text-sm px-1"
                             title="Редактировать"
                           >
@@ -2309,7 +2402,7 @@ export default function ProjectsPage() {
                           return (
                             <td key={colId} className="px-3 py-2">
                               <button
-                                onClick={() => addTask(project.id)}
+                                onClick={() => openCreateTaskModal(project.id)}
                                 className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
                               >
                                 + Добавить задачу
@@ -2391,7 +2484,7 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
-                <select id="f_responsible" defaultValue={editingProject?.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === editingProject?.responsible)?.id || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                <select id="f_responsible" defaultValue={editingProject?.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === editingProject?.responsible)?.id || ''} className="assignee-select w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
                   <option value="">Не назначен</option>
                   {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
                 </select>
@@ -2452,8 +2545,8 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* Edit Task Modal */}
-      {editingTask && (
+      {/* Create / Edit Task Modal */}
+      {(editingTask || creatingTaskForProjectId !== null) && (
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
         >
@@ -2461,95 +2554,69 @@ export default function ProjectsPage() {
             className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-auto p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-base font-semibold mb-4">Редактировать подзадачу</h2>
+            <h2 className="text-base font-semibold mb-4">
+              {editingTask ? 'Редактировать задачу' : 'Новая задача'}
+            </h2>
             <div className="mb-3">
               <label className="block text-xs text-gray-700 font-medium mb-1">Название подзадачи</label>
-              <input id="t_title" defaultValue={editingTask.task.title} placeholder="Название" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+              <input id="t_title" defaultValue={editingTask?.task.title || ''} placeholder="Название" autoFocus className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Дата поступления</label>
-                <input id="t_received" type="date" defaultValue={editingTask.task.receivedAt} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+                <input id="t_received" type="date" defaultValue={editingTask?.task.receivedAt || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
               </div>
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Дедлайн</label>
-                <input id="t_deadline" type="date" defaultValue={editingTask.task.deadline} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+                <input id="t_deadline" type="date" defaultValue={editingTask?.task.deadline || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
               </div>
             </div>
-            <div className="mb-3">
-              <label className="block text-xs text-gray-700 font-medium mb-1">Статус</label>
-              <select id="t_status" defaultValue={editingTask.task.status} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
-                {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Приоритет</label>
+                <select id="t_priority" defaultValue={editingTask?.task.priority || 'medium'} className="priority-select w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  {Object.entries(PRIORITY_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Статус</label>
+                <select id="t_status" defaultValue={editingTask?.task.status || 'not_started'} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                  {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Ответственный</label>
-                <select id="t_responsible" defaultValue={editingTask.task.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === editingTask.task.responsible)?.id || ''} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
+                <select id="t_responsible" defaultValue={editingTask?.task.customFields?.__responsibleUserId || registeredUsers.find(user => user.name === editingTask?.task.responsible)?.id || ''} className="assignee-select w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600">
                   <option value="">Не назначен</option>
                   {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-700 font-medium mb-1">Инженер</label>
-                <input id="t_engineer" defaultValue={editingTask.task.engineer || ''} placeholder="Введите имя" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
+                <input id="t_engineer" defaultValue={editingTask?.task.engineer || ''} placeholder="Введите имя" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
               </div>
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setEditingTask(null)}
+                onClick={() => {
+                  setEditingTask(null);
+                  setCreatingTaskForProjectId(null);
+                }}
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"
               >
                 Отмена
               </button>
               <button
-                onClick={async () => {
-                  const title = (document.getElementById('t_title') as HTMLInputElement).value;
-                  const receivedAt = (document.getElementById('t_received') as HTMLInputElement).value;
-                  const deadline = (document.getElementById('t_deadline') as HTMLInputElement).value;
-                  const status = (document.getElementById('t_status') as HTMLSelectElement).value;
-                  const responsibleUserId = (document.getElementById('t_responsible') as HTMLSelectElement).value;
-                  const responsible = registeredUsers.find(user => user.id === responsibleUserId)?.name || '';
-                  const engineer = (document.getElementById('t_engineer') as HTMLInputElement).value;
-                  const updatedTask: Task = {
-                    ...editingTask.task,
-                    title,
-                    receivedAt,
-                    deadline,
-                    status: status as TaskStatus,
-                    responsible,
-                    engineer,
-                    customFields: {
-                      ...(editingTask.task.customFields || {}),
-                      __responsibleUserId: responsibleUserId,
-                    },
-                    completedAt: status === 'done'
-                      ? editingTask.task.completedAt || new Date().toISOString().split('T')[0]
-                      : undefined,
-                  };
-
-                  try {
-                    const response = await fetch(`/api/projects/${editingTask.projectId}/tasks/${editingTask.task.id}`, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(updatedTask),
-                    });
-                    if (!response.ok) throw new Error('Не удалось сохранить задачу');
-                    const savedTask = await response.json();
-                    setProjects(current => current.map(project => project.id === editingTask.projectId ? {
-                      ...project,
-                      tasks: project.tasks.map(task => task.id === editingTask.task.id ? { ...savedTask, comments: task.comments } : task),
-                    } : project));
-                    setEditingTask(null);
-                  } catch (error) {
-                    alert(error instanceof Error ? error.message : 'Не удалось сохранить задачу');
-                  }
-                }}
+                onClick={editingTask ? saveEditedTask : createTask}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
               >
-                Сохранить
+                {editingTask ? 'Сохранить' : 'Создать задачу'}
               </button>
             </div>
           </div>

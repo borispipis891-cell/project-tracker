@@ -2,364 +2,64 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Cell
-} from 'recharts';
-import { FolderKanban, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { BarChart, Bar, PieChart, Pie, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { AlertTriangle, CheckCircle2, Clock3, FolderKanban, LayoutDashboard, ListChecks, TrendingUp, Users, ArrowUpRight } from 'lucide-react';
 
-interface DashboardStats {
-  totalProjects: number;
-  activeProjects: number;
-  completedProjects: number;
-  overdueProjects: number;
-  totalTasks: number;
-  projectsByStatus: { name: string; value: number; color: string }[];
-  projectsByPriority: { name: string; value: number }[];
-  projectsByMonth: { month: string; count: number }[];
-  completionRate: number;
-  recentProjects: {
-    id: number;
-    name: string;
-    customer: string;
-    status: string;
-    priority: string;
-    tasksCount: number;
-  }[];
-  employeeStats: {
-    id: string;
-    name: string;
-    email: string;
-    projectsCount: number;
-    activeProjects: number;
-    completedProjects: number;
-    tasksCount: number;
-    activeTasks: number;
-    completedTasks: number;
-    overdueTasks: number;
-    completionRate: number;
-  }[];
+type DashboardTab = 'overview' | 'employees' | 'projects';
+interface EmployeeStat { id:string; name:string; email:string; projectsCount:number; activeProjects:number; completedProjects:number; tasksCount:number; activeTasks:number; completedTasks:number; overdueTasks:number; completionRate:number }
+interface ProjectStat { id:number; name:string; status:string; priority:string; deadline:string; responsible:string; engineer:string; totalTasks:number; completedTasks:number; activeTasks:number; overdueTasks:number; highPriorityTasks:number; completionRate:number; tasksByStatus:{name:string;value:number;color:string}[] }
+interface DashboardStats { totalProjects:number; activeProjects:number; completedProjects:number; overdueProjects:number; totalTasks:number; completedTasks:number; overdueTasks:number; taskCompletionRate:number; projectsByStatus:{name:string;value:number;color:string}[]; projectsByPriority:{name:string;value:number}[]; projectsByMonth:{month:string;count:number}[]; completionRate:number; employeeStats:EmployeeStat[]; projectStats:ProjectStat[] }
+
+const STATUS:Record<string,string>={new:'Новый',progress:'В работе',done:'Завершён',blocked:'Заморожен',waiting:'Ожидание'};
+const PRIORITY:Record<string,string>={critical:'Критический',high:'Высокий',medium:'Средний',low:'Низкий'};
+const priorityClass=(p:string)=>({critical:'bg-red-100 text-red-700',high:'bg-orange-100 text-orange-700',medium:'bg-yellow-100 text-yellow-700',low:'bg-green-100 text-green-700'}[p]||'bg-gray-100 text-gray-700');
+const formatDate=(value:string)=>{if(!value)return'Не задан';const[y,m,d]=value.split('-');return y&&m&&d?`${d}.${m}.${y}`:value};
+
+function MetricCard({label,value,hint,icon:Icon,tone='blue'}:{label:string;value:string|number;hint:string;icon:typeof FolderKanban;tone?:'blue'|'green'|'red'|'amber'}){
+  const tones={blue:'bg-blue-100 text-blue-600',green:'bg-green-100 text-green-600',red:'bg-red-100 text-red-600',amber:'bg-amber-100 text-amber-600'};
+  return <div className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-4"><div><div className="text-sm font-medium text-gray-500">{label}</div><div className="mt-2 text-3xl font-bold text-gray-900">{value}</div><div className="mt-1 text-xs text-gray-500">{hint}</div></div><div className={`rounded-xl p-3 ${tones[tone]}`}><Icon className="h-6 w-6"/></div></div></div>
 }
+function ChartCard({title,subtitle,children}:{title:string;subtitle?:string;children:React.ReactNode}){return <section className="rounded-xl border bg-white p-5 shadow-sm"><h2 className="text-base font-semibold text-gray-900">{title}</h2>{subtitle&&<p className="mt-1 text-xs text-gray-500">{subtitle}</p>}<div className="mt-5">{children}</div></section>}
+function Progress({value}:{value:number}){return <div className="flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-green-500" style={{width:`${Math.min(100,Math.max(0,value))}%`}}/></div><span className="w-10 text-right text-xs font-semibold text-gray-700">{value.toFixed(0)}%</span></div>}
 
-export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function DashboardPage(){
+  const[stats,setStats]=useState<DashboardStats|null>(null);const[loading,setLoading]=useState(true);const[activeTab,setActiveTab]=useState<DashboardTab>('overview');const[selectedProjectId,setSelectedProjectId]=useState<number|null>(null);
+  useEffect(()=>{const savedTab=localStorage.getItem('dashboardStatisticsTab') as DashboardTab|null;if(savedTab&&['overview','employees','projects'].includes(savedTab))setActiveTab(savedTab);const savedProject=Number(localStorage.getItem('dashboardSelectedProject'));if(savedProject)setSelectedProjectId(savedProject);fetch('/api/stats/dashboard').then(r=>r.ok?r.json():Promise.reject()).then(setStats).catch(e=>console.error('Error fetching stats:',e)).finally(()=>setLoading(false))},[]);
+  if(loading)return <div className="flex min-h-[420px] items-center justify-center text-gray-500">Загрузка статистики…</div>;
+  if(!stats)return <div className="flex min-h-[420px] items-center justify-center text-red-600">Не удалось загрузить статистику</div>;
+  const selected=stats.projectStats.find(p=>p.id===selectedProjectId)||stats.projectStats[0];
+  const employeeChart=stats.employeeStats.filter(e=>e.tasksCount>0).slice(0,12);
+  const projectChart=[...stats.projectStats].sort((a,b)=>b.totalTasks-a.totalTasks).slice(0,10).map(p=>({name:p.name,Выполнено:p.completedTasks,Активно:p.activeTasks,Просрочено:p.overdueTasks}));
+  const tabs:[DashboardTab,string,typeof LayoutDashboard][]=[['overview','Общий обзор',LayoutDashboard],['employees','По сотрудникам',Users],['projects','По проектам',FolderKanban]];
+  const changeTab=(tab:DashboardTab)=>{setActiveTab(tab);localStorage.setItem('dashboardStatisticsTab',tab)};
+  const chooseProject=(id:number)=>{setSelectedProjectId(id);localStorage.setItem('dashboardSelectedProject',String(id))};
+  return <div className="space-y-6">
+    <header><h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Статистика</h1><p className="mt-1 text-sm text-gray-500">Общая картина, загрузка команды и состояние каждого проекта</p></header>
+    <div className="flex gap-2 overflow-x-auto rounded-xl border bg-white p-2 shadow-sm">{tabs.map(([id,label,Icon])=><button key={id} onClick={()=>changeTab(id)} className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition ${activeTab===id?'bg-blue-600 text-white shadow-sm':'text-gray-600 hover:bg-gray-100'}`}><Icon className="h-4 w-4"/>{label}</button>)}</div>
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
-    try {
-      const response = await fetch('/api/stats/dashboard');
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">Загрузка статистики...</div>
+    {activeTab==='overview'&&<div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Всего проектов" value={stats.totalProjects} hint={`${stats.activeProjects} сейчас активны`} icon={FolderKanban}/><MetricCard label="Всего задач" value={stats.totalTasks} hint={`${stats.completedTasks} выполнено`} icon={ListChecks} tone="amber"/><MetricCard label="Выполнение задач" value={`${stats.taskCompletionRate.toFixed(0)}%`} hint="По всем проектам" icon={TrendingUp} tone="green"/><MetricCard label="Требуют внимания" value={stats.overdueProjects+stats.overdueTasks} hint={`${stats.overdueProjects} проектов · ${stats.overdueTasks} задач`} icon={AlertTriangle} tone="red"/></div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ChartCard title="Проекты по статусам" subtitle="Текущее состояние портфеля"><ResponsiveContainer width="100%" height={280}><PieChart><Pie data={stats.projectsByStatus} dataKey="value" nameKey="name" innerRadius={62} outerRadius={100} paddingAngle={3}>{stats.projectsByStatus.map(i=><Cell key={i.name} fill={i.color}/>)}</Pie><Tooltip/><Legend verticalAlign="bottom"/></PieChart></ResponsiveContainer></ChartCard>
+        <ChartCard title="Проекты по приоритетам" subtitle="Распределение срочности"><ResponsiveContainer width="100%" height={280}><BarChart data={stats.projectsByPriority} margin={{top:8,right:8,left:-20,bottom:0}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" fontSize={12}/><YAxis allowDecimals={false} fontSize={12}/><Tooltip/><Bar dataKey="value" name="Проектов" fill="#3B82F6" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></ChartCard>
       </div>
-    );
-  }
+      <ChartCard title="Динамика создания проектов" subtitle="Новые проекты за последние 12 месяцев"><ResponsiveContainer width="100%" height={280}><LineChart data={stats.projectsByMonth} margin={{top:8,right:16,left:-20,bottom:0}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month" fontSize={11}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="count" name="Проектов" stroke="#2563EB" strokeWidth={3} dot={{r:3}}/></LineChart></ResponsiveContainer></ChartCard>
+      <ChartCard title="Состояние проектов" subtitle="Нажмите на проект для подробной статистики"><div className="grid gap-3 md:grid-cols-2">{stats.projectStats.map(p=><button key={p.id} onClick={()=>{chooseProject(p.id);changeTab('projects')}} className="rounded-lg border p-4 text-left transition hover:border-blue-300 hover:bg-blue-50"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate font-medium text-gray-900">{p.name}</div><div className="mt-1 text-xs text-gray-500">{p.completedTasks} из {p.totalTasks} задач выполнено</div></div>{p.overdueTasks>0&&<span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">{p.overdueTasks} просрочено</span>}</div><div className="mt-3"><Progress value={p.completionRate}/></div></button>)}</div></ChartCard>
+    </div>}
 
-  if (!stats) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg text-red-600">Ошибка загрузки статистики</div>
-      </div>
-    );
-  }
+    {activeTab==='employees'&&<div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Сотрудников" value={stats.employeeStats.length} hint="Активные пользователи" icon={Users}/><MetricCard label="Назначено задач" value={stats.employeeStats.reduce((s,e)=>s+e.tasksCount,0)} hint="Ответственные и инженеры" icon={ListChecks} tone="amber"/><MetricCard label="Выполнено" value={stats.employeeStats.reduce((s,e)=>s+e.completedTasks,0)} hint="Задач команды" icon={CheckCircle2} tone="green"/><MetricCard label="Просрочено" value={stats.employeeStats.reduce((s,e)=>s+e.overdueTasks,0)} hint="Требуют внимания" icon={AlertTriangle} tone="red"/></div>
+      <ChartCard title="Загрузка сотрудников" subtitle="Активные и выполненные задачи по людям">{employeeChart.length?<ResponsiveContainer width="100%" height={340}><BarChart data={employeeChart} margin={{top:8,right:12,left:-15,bottom:42}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" angle={-25} textAnchor="end" interval={0} fontSize={11}/><YAxis allowDecimals={false}/><Tooltip/><Legend/><Bar dataKey="activeTasks" name="Активные" stackId="tasks" fill="#3B82F6"/><Bar dataKey="completedTasks" name="Выполненные" stackId="tasks" fill="#10B981" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer>:<div className="py-16 text-center text-gray-500">Назначенных задач пока нет</div>}</ChartCard>
+      <section className="overflow-hidden rounded-xl border bg-white shadow-sm"><div className="border-b px-5 py-4"><h2 className="font-semibold text-gray-900">Подробная статистика команды</h2><p className="mt-1 text-xs text-gray-500">Сотрудник учитывается как ответственный и как инженер</p></div><div className="overflow-x-auto"><table className="w-full min-w-[820px]"><thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-4 py-3 text-left">Сотрудник</th><th>Проекты</th><th>Активные задачи</th><th>Выполнено</th><th>Просрочено</th><th className="px-4 text-left">Результат</th></tr></thead><tbody className="divide-y">{stats.employeeStats.map(e=><tr key={e.id} className="hover:bg-gray-50"><td className="px-4 py-3"><div className="font-medium text-gray-900">{e.name}</div><div className="text-xs text-gray-500">{e.email}</div></td><td className="text-center text-sm">{e.projectsCount}</td><td className="text-center text-sm text-blue-600">{e.activeTasks}</td><td className="text-center text-sm font-medium text-green-600">{e.completedTasks}</td><td className={`text-center text-sm font-medium ${e.overdueTasks?'text-red-600':'text-gray-500'}`}>{e.overdueTasks}</td><td className="min-w-[180px] px-4 py-3"><Progress value={e.completionRate}/></td></tr>)}</tbody></table></div></section>
+    </div>}
 
-  return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Дашборд</h1>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <div className="bg-white rounded-lg shadow p-4 sm:p-6 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-gray-600">Всего проектов</div>
-              <div className="text-3xl font-bold text-gray-900 mt-2">{stats.totalProjects}</div>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FolderKanban className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-gray-600">Активные</div>
-              <div className="text-3xl font-bold text-blue-600 mt-2">{stats.activeProjects}</div>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Clock className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-gray-600">Завершенные</div>
-              <div className="text-3xl font-bold text-green-600 mt-2">{stats.completedProjects}</div>
-            </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-gray-600">Просроченные</div>
-              <div className="text-3xl font-bold text-red-600 mt-2">{stats.overdueProjects}</div>
-            </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <AlertCircle className="w-6 h-6 text-red-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Completion Rate */}
-      <div className="bg-white rounded-lg shadow p-6 border">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Процент выполнения проектов</h2>
-        <div className="flex items-center">
-          <div className="flex-1">
-            <div className="h-8 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-500 transition-all duration-500"
-                style={{ width: `${stats.completionRate}%` }}
-              />
-            </div>
-          </div>
-          <div className="ml-4 text-2xl font-bold text-gray-900">{stats.completionRate.toFixed(1)}%</div>
-        </div>
-      </div>
-
-      {/* Employee Statistics */}
-      <div className="bg-white rounded-lg shadow border overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b">
-          <h2 className="text-lg sm:text-xl font-bold text-gray-900">Статистика по сотрудникам</h2>
-          <p className="text-sm text-gray-500 mt-1">Проекты и задачи, где сотрудник указан ответственным или инженером</p>
-        </div>
-        {stats.employeeStats.length === 0 ? (
-          <div className="px-6 py-10 text-center text-gray-500">Нет данных по сотрудникам</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px]">
-              <thead className="bg-gray-50 text-xs text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Сотрудник</th>
-                  <th className="px-4 py-3 text-center font-semibold">Проекты</th>
-                  <th className="px-4 py-3 text-center font-semibold">Активные проекты</th>
-                  <th className="px-4 py-3 text-center font-semibold">Задачи</th>
-                  <th className="px-4 py-3 text-center font-semibold">Выполнено</th>
-                  <th className="px-4 py-3 text-center font-semibold">Просрочено</th>
-                  <th className="px-4 py-3 text-left font-semibold">Выполнение</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {stats.employeeStats.map(employee => (
-                  <tr key={employee.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{employee.name}</div>
-                      <div className="text-xs text-gray-500">{employee.email}</div>
-                    </td>
-                    <td className="px-4 py-3 text-center text-sm text-gray-700">{employee.projectsCount}</td>
-                    <td className="px-4 py-3 text-center text-sm text-blue-600 font-medium">{employee.activeProjects}</td>
-                    <td className="px-4 py-3 text-center text-sm text-gray-700">{employee.tasksCount}</td>
-                    <td className="px-4 py-3 text-center text-sm text-green-600 font-medium">{employee.completedTasks}</td>
-                    <td className={`px-4 py-3 text-center text-sm font-medium ${employee.overdueTasks > 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                      {employee.overdueTasks}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 min-w-[130px]">
-                        <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-green-500" style={{ width: `${employee.completionRate}%` }} />
-                        </div>
-                        <span className="text-xs font-semibold text-gray-700 w-10 text-right">
-                          {employee.completionRate.toFixed(0)}%
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Projects by Status - Pie Chart */}
-        <div className="bg-white rounded-lg shadow p-6 border">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Проекты по статусам</h2>
-          {stats.projectsByStatus.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={stats.projectsByStatus}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {stats.projectsByStatus.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-gray-500">
-              Нет данных
-            </div>
-          )}
-        </div>
-
-        {/* Projects by Priority - Bar Chart */}
-        <div className="bg-white rounded-lg shadow p-6 border">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Проекты по приоритету</h2>
-          {stats.projectsByPriority.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={stats.projectsByPriority}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#3B82F6" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-gray-500">
-              Нет данных
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Projects by Month - Line Chart */}
-      <div className="bg-white rounded-lg shadow p-6 border">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Динамика создания проектов</h2>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={stats.projectsByMonth}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="count" stroke="#3B82F6" strokeWidth={2} name="Проектов" />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Recent Projects */}
-      <div className="bg-white rounded-lg shadow border">
-        <div className="px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-gray-900">Недавние проекты</h2>
-          <Link
-            href="/projects"
-            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            Все проекты →
-          </Link>
-        </div>
-
-        <div className="divide-y">
-          {stats.recentProjects.length === 0 ? (
-            <div className="px-6 py-8 text-center text-gray-500">
-              <p className="mb-4">У вас пока нет проектов</p>
-              <Link
-                href="/projects"
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-              >
-                Создать первый проект
-              </Link>
-            </div>
-          ) : (
-            stats.recentProjects.map((project) => (
-              <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
-                className="block px-6 py-4 hover:bg-gray-50 transition"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-900">{project.name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {project.customer} • {project.tasksCount} задач
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    <span
-                      className={`px-3 py-1 text-xs font-medium rounded-full ${
-                        project.status === 'done'
-                          ? 'bg-green-100 text-green-700'
-                          : project.status === 'progress'
-                          ? 'bg-blue-100 text-blue-700'
-                          : project.status === 'blocked'
-                          ? 'bg-sky-100 text-sky-700'
-                          : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {project.status === 'done'
-                        ? 'Завершён'
-                        : project.status === 'progress'
-                        ? 'В работе'
-                        : project.status === 'blocked'
-                        ? '❄️ Заморожен'
-                        : project.status === 'new'
-                        ? 'Новый'
-                        : 'Ожидает'}
-                    </span>
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        project.priority === 'high'
-                          ? 'bg-red-600'
-                          : project.priority === 'medium'
-                          ? 'bg-yellow-500'
-                          : 'bg-green-600'
-                      }`}
-                    />
-                  </div>
-                </div>
-              </Link>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
+    {activeTab==='projects'&&<div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Всего проектов" value={stats.totalProjects} hint="В общем портфеле" icon={FolderKanban}/><MetricCard label="Активные" value={stats.activeProjects} hint="Сейчас в работе" icon={Clock3} tone="amber"/><MetricCard label="Завершённые" value={stats.completedProjects} hint={`${stats.completionRate.toFixed(0)}% от общего числа`} icon={CheckCircle2} tone="green"/><MetricCard label="Просроченные" value={stats.overdueProjects} hint="Требуют контроля" icon={AlertTriangle} tone="red"/></div>
+      <ChartCard title="Сравнение проектов" subtitle="Объём и состояние задач в крупнейших проектах"><ResponsiveContainer width="100%" height={360}><BarChart data={projectChart} layout="vertical" margin={{top:4,right:18,left:70,bottom:0}}><CartesianGrid strokeDasharray="3 3" horizontal={false}/><XAxis type="number" allowDecimals={false}/><YAxis type="category" dataKey="name" width={120} tick={{fontSize:11}}/><Tooltip/><Legend/><Bar dataKey="Выполнено" stackId="tasks" fill="#10B981"/><Bar dataKey="Активно" stackId="tasks" fill="#3B82F6"/><Bar dataKey="Просрочено" fill="#EF4444" radius={[0,5,5,0]}/></BarChart></ResponsiveContainer></ChartCard>
+      {selected?<section className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Детализация проекта</div><h2 className="mt-1 text-xl font-bold text-gray-900">{selected.name}</h2></div><div className="flex flex-wrap gap-2"><select value={selected.id} onChange={e=>chooseProject(Number(e.target.value))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900">{stats.projectStats.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><Link href={`/projects/${selected.id}`} className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white">Открыть проект <ArrowUpRight className="h-4 w-4"/></Link></div></div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Статус</div><div className="mt-2 font-semibold text-gray-900">{STATUS[selected.status]||selected.status}</div></div><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Приоритет</div><span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${priorityClass(selected.priority)}`}>{PRIORITY[selected.priority]||selected.priority}</span></div><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Дедлайн</div><div className="mt-2 font-semibold text-gray-900">{formatDate(selected.deadline)}</div></div><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Команда</div><div className="mt-2 text-sm font-medium text-gray-900">{[selected.responsible,selected.engineer].filter(Boolean).join(' · ')||'Не назначена'}</div></div></div>
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.2fr]"><div><div className="mb-3 flex items-end justify-between"><div><div className="text-sm font-semibold text-gray-900">Прогресс задач</div><div className="mt-1 text-xs text-gray-500">{selected.completedTasks} из {selected.totalTasks} выполнено</div></div><div className="text-2xl font-bold text-gray-900">{selected.completionRate.toFixed(0)}%</div></div><Progress value={selected.completionRate}/><div className="mt-5 grid grid-cols-3 gap-3 text-center"><div className="rounded-lg border p-3"><div className="text-xl font-bold text-blue-600">{selected.activeTasks}</div><div className="text-xs text-gray-500">активно</div></div><div className="rounded-lg border p-3"><div className="text-xl font-bold text-red-600">{selected.overdueTasks}</div><div className="text-xs text-gray-500">просрочено</div></div><div className="rounded-lg border p-3"><div className="text-xl font-bold text-orange-600">{selected.highPriorityTasks}</div><div className="text-xs text-gray-500">срочных</div></div></div></div><div>{selected.tasksByStatus.length?<ResponsiveContainer width="100%" height={230}><PieChart><Pie data={selected.tasksByStatus} dataKey="value" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={3}>{selected.tasksByStatus.map(i=><Cell key={i.name} fill={i.color}/>)}</Pie><Tooltip/><Legend/></PieChart></ResponsiveContainer>:<div className="flex h-[230px] items-center justify-center bg-gray-50 text-gray-500">В проекте пока нет задач</div>}</div></div>
+      </section>:<div className="rounded-xl border bg-white py-16 text-center text-gray-500">Проектов пока нет</div>}
+    </div>}
+  </div>
 }

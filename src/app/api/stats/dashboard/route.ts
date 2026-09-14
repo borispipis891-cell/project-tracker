@@ -32,6 +32,7 @@ export async function GET() {
           where: { deletedAt: null },
           select: {
             status: true,
+            priority: true,
             deadline: true,
             responsible: true,
             engineer: true,
@@ -90,7 +91,8 @@ export async function GET() {
     }, {} as Record<string, number>);
 
     const projectsByPriority = Object.entries(priorityCounts).map(([name, value]) => ({
-      name: name === 'high' ? 'Высокий' :
+      name: name === 'critical' ? 'Критический' :
+            name === 'high' ? 'Высокий' :
             name === 'medium' ? 'Средний' :
             name === 'low' ? 'Низкий' : name,
       value
@@ -178,7 +180,51 @@ export async function GET() {
         completionRate: assignedTasks.length > 0 ? (completedTasks / assignedTasks.length) * 100 : 0,
       };
     });
-    const totalTasks = allProjects.reduce((sum, project) => sum + project.Task.length, 0);
+    const allTasks = allProjects.flatMap(project => project.Task);
+    const totalTasks = allTasks.length;
+    const completedTasks = allTasks.filter(task => task.status === 'done').length;
+    const overdueTasks = allTasks.filter(task => isOverdue(task.deadline, task.status)).length;
+    const taskCompletionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+    const taskStatusLabels: Record<string, string> = {
+      not_started: 'Не начаты',
+      new: 'Новые',
+      progress: 'В работе',
+      review: 'На проверке',
+      blocked: 'Заморожены',
+      waiting: 'Ожидают',
+      done: 'Выполнены',
+    };
+    const taskStatusColors: Record<string, string> = {
+      not_started: '#94A3B8', new: '#94A3B8', progress: '#3B82F6', review: '#F59E0B',
+      blocked: '#0EA5E9', waiting: '#F59E0B', done: '#10B981',
+    };
+    const projectStats = allProjects.map(project => {
+      const projectCompletedTasks = project.Task.filter(task => task.status === 'done').length;
+      const statusCounts = project.Task.reduce((counts, task) => {
+        counts[task.status] = (counts[task.status] || 0) + 1;
+        return counts;
+      }, {} as Record<string, number>);
+      return {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        priority: project.priority,
+        deadline: project.deadline,
+        responsible: project.responsible,
+        engineer: project.engineer,
+        totalTasks: project.Task.length,
+        completedTasks: projectCompletedTasks,
+        activeTasks: project.Task.length - projectCompletedTasks,
+        overdueTasks: project.Task.filter(task => isOverdue(task.deadline, task.status)).length,
+        highPriorityTasks: project.Task.filter(task => task.priority === 'critical' || task.priority === 'high').length,
+        completionRate: project.Task.length > 0 ? (projectCompletedTasks / project.Task.length) * 100 : 0,
+        tasksByStatus: Object.entries(statusCounts).map(([status, value]) => ({
+          name: taskStatusLabels[status] || status,
+          value,
+          color: taskStatusColors[status] || '#64748B',
+        })),
+      };
+    });
 
     const recentProjects = recentProjectsData.map((project) => ({
       id: project.id,
@@ -195,12 +241,16 @@ export async function GET() {
       completedProjects,
       overdueProjects,
       totalTasks,
+      completedTasks,
+      overdueTasks,
+      taskCompletionRate,
       projectsByStatus,
       projectsByPriority,
       projectsByMonth,
       completionRate,
       recentProjects,
       employeeStats,
+      projectStats,
     });
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);

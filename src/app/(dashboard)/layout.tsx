@@ -4,11 +4,12 @@ import { redirect } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, Palette } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, Palette, HardDrive } from 'lucide-react';
 import { ReactNode } from 'react';
 import { isAdminEmail } from '@/lib/admin';
 
 type Theme = 'light' | 'dark' | 'palette';
+const YANDEX_DISK_URL = 'https://disk.yandex.ru/edit/d/3hX6DFXz59K6wF1aaFhfZCPegnqahzm72s0qoIz-cKg6TTQ4WXZKQWZ3UQ?from_public=1';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<any>(null);
@@ -232,6 +233,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <Settings className="w-5 h-5 flex-shrink-0" />
                 {!sidebarCollapsed && <span>Настройки</span>}
               </Link>
+              <a
+                href={YANDEX_DISK_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`mt-1 flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition`}
+                title={sidebarCollapsed ? 'Яндекс Диск' : undefined}
+              >
+                <HardDrive className="w-5 h-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Яндекс Диск ↗</span>}
+              </a>
             </div>
           </nav>
         </aside>
@@ -304,6 +315,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <Settings className="w-5 h-5" />
                 <span>Настройки</span>
               </Link>
+              <a
+                href={YANDEX_DISK_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMobileMenuOpen(false)}
+                className="mt-1 flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition"
+              >
+                <HardDrive className="w-5 h-5" />
+                <span>Яндекс Диск ↗</span>
+              </a>
             </div>
           </nav>
         </aside>

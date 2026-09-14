@@ -1865,15 +1865,6 @@ export default function ProjectsPage() {
                   </Link>
                 )}
                 <Link href="/settings" onClick={closeTopbarMenus} className="block px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">Настройки</Link>
-                <a
-                  href="https://disk.yandex.ru/edit/d/3hX6DFXz59K6wF1aaFhfZCPegnqahzm72s0qoIz-cKg6TTQ4WXZKQWZ3UQ?from_public=1"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={closeTopbarMenus}
-                  className="block px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm"
-                >
-                  Открыть Яндекс Диск ↗
-                </a>
                 <div className="px-3 py-2 cursor-pointer hover:bg-gray-50 text-sm">
                   <SignOutButton />
                 </div>

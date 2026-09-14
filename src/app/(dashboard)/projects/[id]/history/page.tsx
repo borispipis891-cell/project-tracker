@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ClockIcon, ArrowLeftIcon } from '@heroicons/react/outline';
+import { HistoryEntryCard } from '@/components/HistoryEntryCard';
 
 interface HistoryEntry {
   id: number;
@@ -45,21 +46,6 @@ export default function ProjectHistoryPage() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return dateString;
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -95,27 +81,9 @@ export default function ProjectHistoryPage() {
           <p className="text-gray-600">История изменений пуста</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div>
           {history.map((entry) => (
-            <div
-              key={entry.id}
-              className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="font-medium text-gray-900">{entry.action}</span>
-                    <span className="text-sm text-gray-500">—</span>
-                    <span className="text-sm text-gray-600">{entry.user}</span>
-                  </div>
-                  <p className="text-gray-700 mb-2">{entry.details}</p>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <ClockIcon className="w-4 h-4 mr-1" />
-                    {formatDate(entry.createdAt || entry.date)}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <HistoryEntryCard key={entry.id} entry={entry} />
           ))}
         </div>
       )}

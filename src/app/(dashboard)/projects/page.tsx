@@ -8,6 +8,7 @@ import FileUpload from '@/components/FileUpload';
 import ColorPicker from '@/components/ColorPicker';
 import TagInput from '@/components/TagInput';
 import { isAdminEmail } from '@/lib/admin';
+import { HistoryEntryCard } from '@/components/HistoryEntryCard';
 
 type ProjectStatus = 'new' | 'progress' | 'done' | 'blocked' | 'waiting';
 type TaskStatus = 'not_started' | 'progress' | 'blocked' | 'review' | 'done';
@@ -2883,26 +2884,12 @@ export default function ProjectsPage() {
                 if (!project || !project.history || project.history.length === 0) {
                   return <p className="text-sm text-gray-500">История изменений пуста</p>;
                 }
-                return project.history.slice().reverse().map((entry, idx) => (
-                  <div key={idx} className="border-l-2 border-blue-500 pl-3 pb-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold text-gray-700">{entry.user}</span>
-                      <span className="text-xs text-gray-400">
-                        {new Date(entry.date).toLocaleDateString('ru-RU', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                    <div className="text-sm font-medium text-gray-800">{entry.action}</div>
-                    {entry.details && (
-                      <div className="text-xs text-gray-600 mt-1">{entry.details}</div>
-                    )}
-                  </div>
-                ));
+                return project.history
+                  .slice()
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .map((entry, idx) => (
+                    <HistoryEntryCard key={`${entry.date}-${entry.action}-${idx}`} entry={entry} />
+                  ));
               })()}
             </div>
             <div className="flex justify-end mt-4">

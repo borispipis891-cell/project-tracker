@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       pss: body.pss || '',
       reg: body.reg || '',
       status: body.status,
-      priority: body.priority,
+      priority: body.status === 'done' ? 'low' : body.priority,
       responsible: body.responsible || '',
       engineer: body.engineer || '',
       customFields: body.customFields || {},

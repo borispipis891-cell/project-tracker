@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { getUserProjectRole } from '@/lib/project-permissions';
 import { emailTemplates, sendEmail } from '@/lib/email';
+import { syncProjectDeadline } from '@/lib/project-task-deadline';
 
 const appUrl = () => process.env.APP_URL || process.env.NEXTAUTH_URL || '';
 
@@ -81,7 +82,7 @@ export async function PUT(
         title: body.title ?? oldTask.title,
         description: body.description ?? oldTask.description,
         status: body.status ?? oldTask.status,
-        priority: body.priority ?? oldTask.priority,
+        priority: (body.status ?? oldTask.status) === 'done' ? 'low' : body.priority ?? oldTask.priority,
         receivedAt: body.receivedAt ?? oldTask.receivedAt,
         deadline: body.deadline ?? oldTask.deadline,
         dueDate: body.dueDate ?? body.deadline ?? oldTask.dueDate,
@@ -91,6 +92,7 @@ export async function PUT(
         customFields: body.customFields ?? oldTask.customFields,
       },
     });
+    await syncProjectDeadline(projectId);
 
     // Detect changes and create history entries
     const changes: string[] = [];
@@ -233,6 +235,7 @@ export async function DELETE(
     await prisma.task.delete({
       where: { id: taskId },
     });
+    await syncProjectDeadline(projectId);
 
     // Add history entry
     await prisma.projectHistory.create({

@@ -110,6 +110,11 @@ interface StoredUser {
 const TODAY = new Date();
 TODAY.setHours(0, 0, 0, 0);
 
+const latestTaskDeadline = (tasks: Task[]): string => tasks.reduce(
+  (latest, task) => task.deadline && task.deadline > latest ? task.deadline : latest,
+  '',
+);
+
 const applySavedTaskOrder = (project: any): Project => {
   const tasks = [...(project.tasks || project.Task || [])];
   try {
@@ -291,6 +296,7 @@ export default function ProjectsPage() {
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
+  const [uiSettingsLoaded, setUiSettingsLoaded] = useState(false);
   const topbarRef = useRef<HTMLDivElement>(null);
   const projectSaveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const taskSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -349,6 +355,27 @@ export default function ProjectsPage() {
   // Load data from API and localStorage on mount
   useEffect(() => {
     const loadData = async () => {
+      const readJson = <T,>(key: string, fallback: T): T => {
+        try {
+          const saved = localStorage.getItem(key);
+          return saved ? JSON.parse(saved) as T : fallback;
+        } catch {
+          return fallback;
+        }
+      };
+      const expandedProjectIds = new Set(readJson<number[]>('expandedProjectIds', []));
+      setCustomColumns(readJson('customColumns', customColumns));
+      setColumnOrder(readJson('columnOrder', columnOrder));
+      setVisibleColumns(readJson('visibleColumns', visibleColumns));
+      setEmailSettings(readJson('emailSettings', emailSettings));
+      setColumnWidths(readJson('columnWidths', columnWidths));
+      setActiveFilter(readJson<FilterType>('activeProjectFilter', 'all'));
+      setSelectedEmployeeId(readJson<string | null>('selectedEmployeeId', null));
+      setSearchQuery(localStorage.getItem('projectSearchQuery') || '');
+      setSortField(readJson<string | null>('projectSortField', null));
+      setSortDirection(readJson<'asc' | 'desc'>('projectSortDirection', 'asc'));
+      setUiSettingsLoaded(true);
+
       try {
         // Try to migrate from localStorage first
         await migrateFromLocalStorage();
@@ -357,45 +384,19 @@ export default function ProjectsPage() {
         const response = await fetch('/api/projects/list');
         if (response.ok) {
           const data = await response.json();
-          setProjects(data.projects.map((p: any) => applySavedTaskOrder({ ...p, expanded: false })));
+          setProjects(data.projects.map((p: any) => applySavedTaskOrder({ ...p, expanded: expandedProjectIds.has(p.id) })));
         } else {
           // Fallback to regular endpoint if list endpoint not available
           const fallbackResponse = await fetch('/api/projects');
           if (fallbackResponse.ok) {
             const data = await fallbackResponse.json();
-            setProjects(data.map((p: any) => applySavedTaskOrder({ ...p, expanded: false })));
+            setProjects(data.map((p: any) => applySavedTaskOrder({ ...p, expanded: expandedProjectIds.has(p.id) })));
           }
         }
       } catch (error) {
         console.error('Failed to load projects:', error);
       }
 
-      // Load UI settings from localStorage
-      const savedCustomColumns = localStorage.getItem('customColumns');
-      const savedColumnOrder = localStorage.getItem('columnOrder');
-      const savedVisibleColumns = localStorage.getItem('visibleColumns');
-      const savedEmailSettings = localStorage.getItem('emailSettings');
-      const savedColumnWidths = localStorage.getItem('columnWidths');
-
-      if (savedCustomColumns) {
-        setCustomColumns(JSON.parse(savedCustomColumns));
-      }
-
-      if (savedColumnOrder) {
-        setColumnOrder(JSON.parse(savedColumnOrder));
-      }
-
-      if (savedVisibleColumns) {
-        setVisibleColumns(JSON.parse(savedVisibleColumns));
-      }
-
-      if (savedEmailSettings) {
-        setEmailSettings(JSON.parse(savedEmailSettings));
-      }
-
-      if (savedColumnWidths) {
-        setColumnWidths(JSON.parse(savedColumnWidths));
-      }
     };
 
     loadData();
@@ -403,28 +404,42 @@ export default function ProjectsPage() {
 
   // Save custom columns to localStorage
   useEffect(() => {
+    if (!uiSettingsLoaded) return;
     localStorage.setItem('customColumns', JSON.stringify(customColumns));
-  }, [customColumns]);
+  }, [customColumns, uiSettingsLoaded]);
 
   // Save column order to localStorage
   useEffect(() => {
+    if (!uiSettingsLoaded) return;
     localStorage.setItem('columnOrder', JSON.stringify(columnOrder));
-  }, [columnOrder]);
+  }, [columnOrder, uiSettingsLoaded]);
 
   // Save visible columns to localStorage
   useEffect(() => {
+    if (!uiSettingsLoaded) return;
     localStorage.setItem('visibleColumns', JSON.stringify(visibleColumns));
-  }, [visibleColumns]);
+  }, [visibleColumns, uiSettingsLoaded]);
 
   // Save email settings to localStorage
   useEffect(() => {
+    if (!uiSettingsLoaded) return;
     localStorage.setItem('emailSettings', JSON.stringify(emailSettings));
-  }, [emailSettings]);
+  }, [emailSettings, uiSettingsLoaded]);
 
   // Save column widths to localStorage
   useEffect(() => {
+    if (!uiSettingsLoaded) return;
     localStorage.setItem('columnWidths', JSON.stringify(columnWidths));
-  }, [columnWidths]);
+  }, [columnWidths, uiSettingsLoaded]);
+
+  useEffect(() => {
+    if (!uiSettingsLoaded) return;
+    localStorage.setItem('activeProjectFilter', JSON.stringify(activeFilter));
+    localStorage.setItem('selectedEmployeeId', JSON.stringify(selectedEmployeeId));
+    localStorage.setItem('projectSearchQuery', searchQuery);
+    localStorage.setItem('projectSortField', JSON.stringify(sortField));
+    localStorage.setItem('projectSortDirection', JSON.stringify(sortDirection));
+  }, [activeFilter, searchQuery, selectedEmployeeId, sortDirection, sortField, uiSettingsLoaded]);
 
   const daysUntil = (dateStr: string): number | null => {
     if (!dateStr) return null;
@@ -730,7 +745,13 @@ export default function ProjectsPage() {
   };
 
   const toggleExpand = (id: number) => {
-    setProjects(projects.map(p => p.id === id ? { ...p, expanded: !p.expanded } : p));
+    setProjects(current => {
+      const updated = current.map(p => p.id === id ? { ...p, expanded: !p.expanded } : p);
+      localStorage.setItem('expandedProjectIds', JSON.stringify(
+        updated.filter(project => project.expanded).map(project => project.id)
+      ));
+      return updated;
+    });
   };
 
   const addCustomColumn = () => {
@@ -823,6 +844,9 @@ export default function ProjectsPage() {
         if (field === 'status' && value === 'done' && !p.completedAt) {
           updatedProject.completedAt = new Date().toISOString().split('T')[0];
         }
+        if (field === 'status' && value === 'done') {
+          updatedProject.priority = 'low';
+        }
 
         // Clear completedAt when status changes from 'done' to something else
         if (field === 'status' && value !== 'done' && p.completedAt) {
@@ -835,7 +859,7 @@ export default function ProjectsPage() {
     });
 
     // Sort by priority when priority is changed
-    if (field === 'priority') {
+    if (field === 'priority' || (field === 'status' && value === 'done')) {
       updated.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
     }
 
@@ -901,6 +925,9 @@ export default function ProjectsPage() {
     if (field === 'status' && value === 'done' && !task.completedAt) {
       updatedTask.completedAt = new Date().toISOString().split('T')[0];
     }
+    if (field === 'status' && value === 'done') {
+      updatedTask.priority = 'low';
+    }
 
     // Clear completedAt when status changes from 'done' to something else
     if (field === 'status' && value !== 'done' && task.completedAt) {
@@ -911,10 +938,10 @@ export default function ProjectsPage() {
     setProjects(current => current.map(p => {
       if (p.id !== projectId) return p;
       const tasks = p.tasks.map(t => t.id === taskId ? updatedTask : t);
-      if (field === 'priority') {
+      if (field === 'priority' || (field === 'status' && value === 'done')) {
         tasks.sort((a, b) => PRIORITY_ORDER[a.priority || 'medium'] - PRIORITY_ORDER[b.priority || 'medium']);
       }
-      return { ...p, tasks };
+      return { ...p, tasks, deadline: field === 'deadline' ? latestTaskDeadline(tasks) : p.deadline };
     }));
 
     const timerKey = `${projectId}:${taskId}`;
@@ -927,11 +954,12 @@ export default function ProjectsPage() {
           body: JSON.stringify(updatedTask),
         });
         if (!response.ok) throw new Error('Failed to update task');
-        const returnedTask = await response.json();
-        setProjects(current => current.map(p => p.id === projectId ? {
-          ...p,
-          tasks: p.tasks.map(t => t.id === taskId ? { ...returnedTask, comments: t.comments } : t),
-        } : p));
+        const returnedTask: Task = await response.json();
+        setProjects(current => current.map(p => {
+          if (p.id !== projectId) return p;
+          const tasks = p.tasks.map(t => t.id === taskId ? { ...returnedTask, comments: t.comments } : t);
+          return { ...p, tasks, deadline: latestTaskDeadline(tasks) };
+        }));
       } catch (error) {
         console.error('Failed to update task:', error);
       }
@@ -944,7 +972,7 @@ export default function ProjectsPage() {
     if (!task) return;
 
     const newStatus = task.status === 'done' ? 'not_started' : 'done';
-    const updatedTask = { ...task, status: newStatus };
+    const updatedTask = { ...task, status: newStatus, priority: newStatus === 'done' ? 'low' as Priority : task.priority };
 
     // Set or clear completedAt
     if (newStatus === 'done') {
@@ -963,13 +991,13 @@ export default function ProjectsPage() {
 
       if (response.ok) {
         // Обновляем задачу локально без повторного запроса проекта
-        const returnedTask = await response.json();
-        setProjects(projects.map(p =>
-          p.id === projectId ? {
-            ...p,
-            tasks: p.tasks.map(t => t.id === taskId ? { ...returnedTask, comments: t.comments } : t)
-          } : p
-        ));
+        const returnedTask: Task = await response.json();
+        setProjects(current => current.map(p => {
+          if (p.id !== projectId) return p;
+          const tasks = p.tasks.map(t => t.id === taskId ? { ...returnedTask, comments: t.comments } : t);
+          tasks.sort((a, b) => PRIORITY_ORDER[a.priority || 'medium'] - PRIORITY_ORDER[b.priority || 'medium']);
+          return { ...p, tasks };
+        }));
       }
     } catch (error) {
       console.error('Failed to toggle task:', error);
@@ -997,10 +1025,11 @@ export default function ProjectsPage() {
     const responsibleUserId = (document.getElementById('t_responsible') as HTMLSelectElement).value;
     const responsible = registeredUsers.find(user => user.id === responsibleUserId)?.name || '';
 
+    const taskStatus = (document.getElementById('t_status') as HTMLSelectElement).value as TaskStatus;
     const newTask = {
       title,
-      status: (document.getElementById('t_status') as HTMLSelectElement).value as TaskStatus,
-      priority: (document.getElementById('t_priority') as HTMLSelectElement).value as Priority,
+      status: taskStatus,
+      priority: taskStatus === 'done' ? 'low' as Priority : (document.getElementById('t_priority') as HTMLSelectElement).value as Priority,
       receivedAt: (document.getElementById('t_received') as HTMLInputElement).value,
       deadline: (document.getElementById('t_deadline') as HTMLInputElement).value,
       responsible,
@@ -1027,7 +1056,7 @@ export default function ProjectsPage() {
         if (p.id !== creatingTaskForProjectId) return p;
         const tasks = [...p.tasks, createdTask];
         tasks.sort((a, b) => PRIORITY_ORDER[a.priority || 'medium'] - PRIORITY_ORDER[b.priority || 'medium']);
-        return { ...p, tasks };
+        return { ...p, tasks, deadline: latestTaskDeadline(tasks) };
       }));
       setCreatingTaskForProjectId(null);
     } catch (error) {
@@ -1081,12 +1110,11 @@ export default function ProjectsPage() {
       }
 
       // Удаляем задачу локально без повторного запроса проекта
-      setProjects(projects.map(p =>
-        p.id === projectId ? {
-          ...p,
-          tasks: p.tasks.filter(t => t.id !== taskId)
-        } : p
-      ));
+      setProjects(current => current.map(p => {
+        if (p.id !== projectId) return p;
+        const tasks = p.tasks.filter(t => t.id !== taskId);
+        return { ...p, tasks, deadline: latestTaskDeadline(tasks) };
+      }));
     } catch (error) {
       console.error('Failed to delete task:', error);
       alert('Ошибка удаления задачи');
@@ -1141,7 +1169,7 @@ export default function ProjectsPage() {
       receivedAt: (document.getElementById('t_received') as HTMLInputElement).value,
       deadline: (document.getElementById('t_deadline') as HTMLInputElement).value,
       status,
-      priority: (document.getElementById('t_priority') as HTMLSelectElement).value as Priority,
+      priority: status === 'done' ? 'low' : (document.getElementById('t_priority') as HTMLSelectElement).value as Priority,
       responsible,
       engineer: (document.getElementById('t_engineer') as HTMLInputElement).value.trim(),
       customFields: {
@@ -1165,7 +1193,7 @@ export default function ProjectsPage() {
         if (project.id !== editingTask.projectId) return project;
         const tasks = project.tasks.map(task => task.id === editingTask.task.id ? { ...savedTask, comments: task.comments } : task);
         tasks.sort((a, b) => PRIORITY_ORDER[(a.priority || 'medium') as Priority] - PRIORITY_ORDER[(b.priority || 'medium') as Priority]);
-        return { ...project, tasks };
+        return { ...project, tasks, deadline: latestTaskDeadline(tasks) };
       }));
       setEditingTask(null);
     } catch (error) {
@@ -1249,6 +1277,7 @@ export default function ProjectsPage() {
     projectSubmittingRef.current = true;
     setProjectSubmitting(true);
 
+    const projectStatus = (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus;
     const projectData = {
       name,
       receivedAt: (document.getElementById('f_received') as HTMLInputElement).value || '2026-09-01',
@@ -1256,8 +1285,8 @@ export default function ProjectsPage() {
       customer: (document.getElementById('f_customer') as HTMLInputElement).value,
       pss: (document.getElementById('f_pss') as HTMLInputElement).value,
       reg: (document.getElementById('f_reg') as HTMLInputElement).value,
-      status: (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus,
-      priority: (document.getElementById('f_priority') as HTMLSelectElement).value as Priority,
+      status: projectStatus,
+      priority: projectStatus === 'done' ? 'low' as Priority : (document.getElementById('f_priority') as HTMLSelectElement).value as Priority,
       responsible: registeredUsers.find(user => user.id === (document.getElementById('f_responsible') as HTMLSelectElement).value)?.name || '',
       engineer: (document.getElementById('f_engineer') as HTMLInputElement).value,
       color: editingProject?.color || newProjectColor,

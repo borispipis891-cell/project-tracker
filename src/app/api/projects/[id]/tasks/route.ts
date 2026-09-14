@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { getUserProjectRole } from '@/lib/project-permissions';
 import { emailTemplates, sendEmail } from '@/lib/email';
+import { syncProjectDeadline } from '@/lib/project-task-deadline';
 
 const responsibleUserIdFrom = (customFields: unknown) => {
   if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
@@ -38,7 +39,7 @@ export async function POST(
           title: body.title,
           description: body.description || '',
           status: body.status || 'not_started',
-          priority: body.priority || 'medium',
+          priority: body.status === 'done' ? 'low' : body.priority || 'medium',
           receivedAt: body.receivedAt || '',
           deadline: body.deadline || '',
           dueDate: body.dueDate || body.deadline || '',
@@ -60,6 +61,7 @@ export async function POST(
     ]);
     console.log(`[Task Create] DB write: ${Date.now() - t1}ms`);
     console.log(`[Task Create] Total: ${Date.now() - startTime}ms`);
+    await syncProjectDeadline(projectId);
 
     try {
       if (task.responsible) {

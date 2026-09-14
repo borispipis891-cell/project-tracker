@@ -147,7 +147,7 @@ export async function PUT(
         pss: body.pss,
         reg: body.reg,
         status: body.status,
-        priority: body.priority,
+        priority: body.status === 'done' ? 'low' : body.priority,
         responsible: body.responsible,
         engineer: body.engineer,
         color: body.color,
@@ -187,8 +187,8 @@ export async function PUT(
     if (oldProject.status !== body.status) {
       changes.push(`статус с "${oldProject.status}" на "${body.status}"`);
     }
-    if (oldProject.priority !== body.priority) {
-      changes.push(`приоритет с "${oldProject.priority}" на "${body.priority}"`);
+    if (oldProject.priority !== project.priority) {
+      changes.push(`приоритет с "${oldProject.priority}" на "${project.priority}"`);
     }
     if (oldProject.deadline !== body.deadline) {
       changes.push(`дедлайн с "${oldProject.deadline}" на "${body.deadline}"`);

@@ -683,7 +683,7 @@ export default function ProjectsPage() {
     completedAt: 'Дата выполнения',
     customer: 'Заказчик',
     pss: 'PSS',
-    reg: 'Номер регистрации',
+    reg: 'Номер CRM',
     status: 'Статус',
     responsible: 'Ответственный',
     engineer: 'Инженер'
@@ -1425,7 +1425,7 @@ export default function ProjectsPage() {
       'Проект',
       'Заказчик',
       'PSS',
-      'Регистрация',
+      'Номер CRM',
       'Статус',
       'Приоритет',
       'Дата поступления',
@@ -1539,7 +1539,7 @@ export default function ProjectsPage() {
           <div className="absolute left-3 top-2 text-gray-500">⌕</div>
           <input
             type="text"
-            placeholder="Поиск по проекту, заказчику, регистрации..."
+            placeholder="Поиск по проекту, заказчику, номеру CRM..."
             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -2500,7 +2500,7 @@ export default function ProjectsPage() {
                 <input id="f_pss" defaultValue={editingProject?.pss || ''} placeholder="PSS-000" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
               </div>
               <div>
-                <label className="block text-xs text-gray-700 font-medium mb-1">Номер регистрации</label>
+                <label className="block text-xs text-gray-700 font-medium mb-1">Номер CRM</label>
                 <input id="f_reg" defaultValue={editingProject?.reg || ''} placeholder="Р-000" className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-600" />
               </div>
             </div>

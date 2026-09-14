@@ -183,7 +183,7 @@ export default function ProjectDetailPage() {
               </div>
 
               <div>
-                <div className="text-gray-500 mb-1">Номер регистрации</div>
+                <div className="text-gray-500 mb-1">Номер CRM</div>
                 <div className="font-medium">{project.reg}</div>
               </div>
 

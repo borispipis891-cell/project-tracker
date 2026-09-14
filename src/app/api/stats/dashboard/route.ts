@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
+import { ADMIN_EMAIL } from '@/lib/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,11 +18,26 @@ export async function GET() {
     const allProjects = await prisma.project.findMany({
       where: { deletedAt: null },
       select: {
+        id: true,
+        name: true,
         status: true,
         priority: true,
         deadline: true,
         completedAt: true,
         createdAt: true,
+        responsible: true,
+        engineer: true,
+        customFields: true,
+        Task: {
+          where: { deletedAt: null },
+          select: {
+            status: true,
+            deadline: true,
+            responsible: true,
+            engineer: true,
+            customFields: true,
+          },
+        },
       },
     });
 
@@ -103,7 +119,7 @@ export async function GET() {
     const completionRate = totalProjects > 0 ? (completedProjects / totalProjects) * 100 : 0;
 
     // Recent projects are shared with every authenticated user.
-    const [recentProjectsData, totalTasks] = await Promise.all([
+    const [recentProjectsData, employeesData] = await Promise.all([
       prisma.project.findMany({
         where: { deletedAt: null },
         select: {
@@ -117,8 +133,52 @@ export async function GET() {
         orderBy: { updatedAt: 'desc' },
         take: 5,
       }),
-      prisma.task.count({ where: { Project: { deletedAt: null } } }),
+      prisma.user.findMany({
+        where: { status: 'active', isBlocked: false, email: { not: ADMIN_EMAIL } },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' },
+      }),
     ]);
+
+    const responsibleUserIdFrom = (customFields: unknown) => {
+      if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
+      const value = (customFields as Record<string, unknown>).__responsibleUserId;
+      return typeof value === 'string' ? value : null;
+    };
+    const isAssignedTo = (
+      employee: { id: string; name: string },
+      item: { responsible: string | null; engineer: string | null; customFields: unknown },
+    ) => responsibleUserIdFrom(item.customFields) === employee.id
+      || item.responsible === employee.name
+      || item.engineer === employee.name;
+    const isOverdue = (deadline: string, status: string) => {
+      if (!deadline || status === 'done') return false;
+      const timestamp = new Date(`${deadline}T23:59:59`).getTime();
+      return Number.isFinite(timestamp) && timestamp < Date.now();
+    };
+
+    const employeeStats = employeesData.map(employee => {
+      const assignedProjects = allProjects.filter(project => isAssignedTo(employee, project));
+      const assignedTasks = allProjects.flatMap(project =>
+        project.Task.filter(task => isAssignedTo(employee, task))
+      );
+      const completedTasks = assignedTasks.filter(task => task.status === 'done').length;
+
+      return {
+        id: employee.id,
+        name: employee.name,
+        email: employee.email,
+        projectsCount: assignedProjects.length,
+        activeProjects: assignedProjects.filter(project => project.status !== 'done').length,
+        completedProjects: assignedProjects.filter(project => project.status === 'done').length,
+        tasksCount: assignedTasks.length,
+        activeTasks: assignedTasks.length - completedTasks,
+        completedTasks,
+        overdueTasks: assignedTasks.filter(task => isOverdue(task.deadline, task.status)).length,
+        completionRate: assignedTasks.length > 0 ? (completedTasks / assignedTasks.length) * 100 : 0,
+      };
+    });
+    const totalTasks = allProjects.reduce((sum, project) => sum + project.Task.length, 0);
 
     const recentProjects = recentProjectsData.map((project) => ({
       id: project.id,
@@ -140,6 +200,7 @@ export async function GET() {
       projectsByMonth,
       completionRate,
       recentProjects,
+      employeeStats,
     });
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);

@@ -37,6 +37,19 @@ interface DashboardStats {
     priority: string;
     tasksCount: number;
   }[];
+  employeeStats: {
+    id: string;
+    name: string;
+    email: string;
+    projectsCount: number;
+    activeProjects: number;
+    completedProjects: number;
+    tasksCount: number;
+    activeTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+    completionRate: number;
+  }[];
 }
 
 export default function DashboardPage() {
@@ -148,6 +161,60 @@ export default function DashboardPage() {
           </div>
           <div className="ml-4 text-2xl font-bold text-gray-900">{stats.completionRate.toFixed(1)}%</div>
         </div>
+      </div>
+
+      {/* Employee Statistics */}
+      <div className="bg-white rounded-lg shadow border overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 border-b">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900">Статистика по сотрудникам</h2>
+          <p className="text-sm text-gray-500 mt-1">Проекты и задачи, где сотрудник указан ответственным или инженером</p>
+        </div>
+        {stats.employeeStats.length === 0 ? (
+          <div className="px-6 py-10 text-center text-gray-500">Нет данных по сотрудникам</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px]">
+              <thead className="bg-gray-50 text-xs text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Сотрудник</th>
+                  <th className="px-4 py-3 text-center font-semibold">Проекты</th>
+                  <th className="px-4 py-3 text-center font-semibold">Активные проекты</th>
+                  <th className="px-4 py-3 text-center font-semibold">Задачи</th>
+                  <th className="px-4 py-3 text-center font-semibold">Выполнено</th>
+                  <th className="px-4 py-3 text-center font-semibold">Просрочено</th>
+                  <th className="px-4 py-3 text-left font-semibold">Выполнение</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {stats.employeeStats.map(employee => (
+                  <tr key={employee.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{employee.name}</div>
+                      <div className="text-xs text-gray-500">{employee.email}</div>
+                    </td>
+                    <td className="px-4 py-3 text-center text-sm text-gray-700">{employee.projectsCount}</td>
+                    <td className="px-4 py-3 text-center text-sm text-blue-600 font-medium">{employee.activeProjects}</td>
+                    <td className="px-4 py-3 text-center text-sm text-gray-700">{employee.tasksCount}</td>
+                    <td className="px-4 py-3 text-center text-sm text-green-600 font-medium">{employee.completedTasks}</td>
+                    <td className={`px-4 py-3 text-center text-sm font-medium ${employee.overdueTasks > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                      {employee.overdueTasks}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 min-w-[130px]">
+                        <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-green-500" style={{ width: `${employee.completionRate}%` }} />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-700 w-10 text-right">
+                          {employee.completionRate.toFixed(0)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Charts Row */}

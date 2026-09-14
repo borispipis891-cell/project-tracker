@@ -235,6 +235,7 @@ export default function ProjectsPage() {
     canInvite: true
   });
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -609,6 +610,19 @@ export default function ProjectsPage() {
     return haystack.includes(q);
   };
 
+  const matchesEmployee = (project: Project): boolean => {
+    if (!selectedEmployeeId) return true;
+    const employee = registeredUsers.find(user => user.id === selectedEmployeeId);
+    if (!employee) return false;
+    const isAssigned = (responsible?: string, engineer?: string, customFields?: Record<string, string>) =>
+      customFields?.__responsibleUserId === employee.id
+      || responsible === employee.name
+      || engineer === employee.name;
+
+    return isAssigned(project.responsible, project.engineer, project.customFields)
+      || project.tasks.some(task => isAssigned(task.responsible, task.engineer, task.customFields));
+  };
+
   const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -658,7 +672,7 @@ export default function ProjectsPage() {
   };
 
   const filteredProjects = sortProjects(
-    projects.filter(p => matchesFilter(p) && matchesSearch(p, searchQuery))
+    projects.filter(p => matchesFilter(p) && matchesEmployee(p) && matchesSearch(p, searchQuery))
   );
 
   const COLUMN_LABELS: Record<string, string> = {
@@ -1853,6 +1867,36 @@ export default function ProjectsPage() {
             {f.label}
           </button>
         ))}
+      </div>
+
+      {/* Employee Filters */}
+      <div className="bg-white border-b border-gray-200 px-5 py-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">Сотрудники:</span>
+          <button
+            onClick={() => setSelectedEmployeeId(null)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${
+              selectedEmployeeId === null
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            Все сотрудники
+          </button>
+          {registeredUsers.map(employee => (
+            <button
+              key={employee.id}
+              onClick={() => setSelectedEmployeeId(employee.id)}
+              className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${
+                selectedEmployeeId === employee.id
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {employee.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Table */}

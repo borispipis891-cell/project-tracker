@@ -31,13 +31,9 @@ export async function GET() {
         Task: {
           where: { deletedAt: null },
           select: {
-            id: true,
-            title: true,
             status: true,
             priority: true,
             deadline: true,
-            createdAt: true,
-            completedAt: true,
             responsible: true,
             engineer: true,
             customFields: true,
@@ -227,15 +223,6 @@ export async function GET() {
           value,
           color: taskStatusColors[status] || '#64748B',
         })),
-        taskTimeline: project.Task
-          .map(task => ({
-            id: task.id,
-            title: task.title,
-            status: task.status,
-            createdAt: task.createdAt.toISOString(),
-            completedAt: task.completedAt,
-          }))
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       };
     });
 

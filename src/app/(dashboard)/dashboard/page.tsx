@@ -2,18 +2,93 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { BarChart, Bar, PieChart, Pie, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, LineChart, Line, ScatterChart, Scatter, ZAxis, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AlertTriangle, CheckCircle2, Clock3, FolderKanban, LayoutDashboard, ListChecks, TrendingUp, Users, ArrowUpRight } from 'lucide-react';
 
 type DashboardTab = 'overview' | 'employees' | 'projects';
 interface EmployeeStat { id:string; name:string; email:string; projectsCount:number; activeProjects:number; completedProjects:number; tasksCount:number; activeTasks:number; completedTasks:number; overdueTasks:number; completionRate:number }
-interface ProjectStat { id:number; name:string; status:string; priority:string; deadline:string; responsible:string; engineer:string; totalTasks:number; completedTasks:number; activeTasks:number; overdueTasks:number; highPriorityTasks:number; completionRate:number; tasksByStatus:{name:string;value:number;color:string}[] }
+interface TaskTimelineItem { id:number; title:string; status:string; createdAt:string; completedAt:string|null }
+interface ProjectStat { id:number; name:string; status:string; priority:string; deadline:string; responsible:string; engineer:string; totalTasks:number; completedTasks:number; activeTasks:number; overdueTasks:number; highPriorityTasks:number; completionRate:number; tasksByStatus:{name:string;value:number;color:string}[]; taskTimeline:TaskTimelineItem[] }
 interface DashboardStats { totalProjects:number; activeProjects:number; completedProjects:number; overdueProjects:number; totalTasks:number; completedTasks:number; overdueTasks:number; taskCompletionRate:number; projectsByStatus:{name:string;value:number;color:string}[]; projectsByPriority:{name:string;value:number}[]; projectsByMonth:{month:string;count:number}[]; completionRate:number; employeeStats:EmployeeStat[]; projectStats:ProjectStat[] }
 
 const STATUS:Record<string,string>={new:'Новый',progress:'В работе',done:'Завершён',blocked:'Заморожен',waiting:'Ожидание'};
 const PRIORITY:Record<string,string>={critical:'Критический',high:'Высокий',medium:'Средний',low:'Низкий'};
 const priorityClass=(p:string)=>({critical:'bg-red-100 text-red-700',high:'bg-orange-100 text-orange-700',medium:'bg-yellow-100 text-yellow-700',low:'bg-green-100 text-green-700'}[p]||'bg-gray-100 text-gray-700');
 const formatDate=(value:string)=>{if(!value)return'Не задан';const[y,m,d]=value.split('-');return y&&m&&d?`${d}.${m}.${y}`:value};
+const formatTimelineDate=(value:number|string)=>new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(value));
+const taskPointColor=(status:string)=>status==='done'?'#10B981':status==='blocked'?'#0EA5E9':status==='review'?'#F59E0B':'#3B82F6';
+
+interface TimelinePoint extends TaskTimelineItem { createdTimestamp:number; order:number }
+
+function TaskCreationTimeline({tasks}:{tasks:TaskTimelineItem[]}){
+  if(!tasks.length)return <div className="flex h-[280px] items-center justify-center rounded-lg bg-gray-50 text-sm text-gray-500">В проекте пока нет задач</div>;
+  const ordered=[...tasks].sort((a,b)=>new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime());
+  const points:TimelinePoint[]=ordered.map((task,order)=>({...task,createdTimestamp:new Date(task.createdAt).getTime(),order}));
+  const timestamps=points.map(point=>point.createdTimestamp);
+  const minDate=Math.min(...timestamps);
+  const maxDate=Math.max(...timestamps);
+  const padding=Math.max(24*60*60*1000,(maxDate-minDate)*0.08);
+  const chartHeight=Math.max(320,points.length*42+80);
+  const ticks=points.map(point=>point.order);
+  const taskLabel=(order:number)=>{
+    const title=points[order]?.title||'';
+    return title.length>25?`${title.slice(0,24)}…`:title;
+  };
+
+  return <div>
+    <div className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-gray-500">
+      <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-blue-500"/>Активная</span>
+      <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-amber-500"/>На проверке</span>
+      <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-sky-500"/>Заморожена</span>
+      <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500"/>Выполнена</span>
+    </div>
+    <div className="max-h-[720px] overflow-auto rounded-lg border bg-gray-50/40">
+      <div style={{height:chartHeight,minWidth:680}}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart margin={{top:24,right:28,bottom:34,left:12}}>
+            <CartesianGrid strokeDasharray="3 5" stroke="#D1D5DB"/>
+            <XAxis
+              type="number"
+              dataKey="createdTimestamp"
+              domain={[minDate-padding,maxDate+padding]}
+              scale="time"
+              tickFormatter={formatTimelineDate}
+              tick={{fontSize:11,fill:'#6B7280'}}
+              label={{value:'Дата добавления',position:'insideBottom',offset:-22,fill:'#6B7280',fontSize:12}}
+            />
+            <YAxis
+              type="number"
+              dataKey="order"
+              domain={[-0.5,points.length-0.5]}
+              ticks={ticks}
+              width={190}
+              tickFormatter={taskLabel}
+              tick={{fontSize:11,fill:'#4B5563'}}
+              label={{value:'Задачи',angle:-90,position:'insideLeft',fill:'#6B7280',fontSize:12}}
+            />
+            <ZAxis range={[90,90]}/>
+            <Tooltip
+              cursor={{strokeDasharray:'3 3'}}
+              content={({active,payload})=>{
+                const point=payload?.[0]?.payload as TimelinePoint|undefined;
+                if(!active||!point)return null;
+                return <div className="max-w-[280px] rounded-lg border bg-white p-3 text-sm shadow-lg">
+                  <div className="font-semibold text-gray-900">{point.title}</div>
+                  <div className="mt-1 text-gray-600">Добавлена: {formatTimelineDate(point.createdTimestamp)}</div>
+                  <div className="mt-1 text-gray-600">Статус: {point.status==='done'?'Выполнена':point.status==='blocked'?'Заморожена':point.status==='review'?'На проверке':'Активная'}</div>
+                </div>;
+              }}
+            />
+            <Scatter name="Задачи" data={points}>
+              {points.map(point=><Cell key={point.id} fill={taskPointColor(point.status)}/>)}
+            </Scatter>
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+    <p className="mt-3 text-xs text-gray-500">Самые ранние задачи находятся снизу, новые — выше. Наведите на точку, чтобы увидеть детали.</p>
+  </div>;
+}
 
 function MetricCard({label,value,hint,icon:Icon,tone='blue'}:{label:string;value:string|number;hint:string;icon:typeof FolderKanban;tone?:'blue'|'green'|'red'|'amber'}){
   const tones={blue:'bg-blue-100 text-blue-600',green:'bg-green-100 text-green-600',red:'bg-red-100 text-red-600',amber:'bg-amber-100 text-amber-600'};
@@ -59,6 +134,11 @@ export default function DashboardPage(){
       {selected?<section className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Детализация проекта</div><h2 className="mt-1 text-xl font-bold text-gray-900">{selected.name}</h2></div><div className="flex flex-wrap gap-2"><select value={selected.id} onChange={e=>chooseProject(Number(e.target.value))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900">{stats.projectStats.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><Link href={`/projects/${selected.id}`} className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white">Открыть проект <ArrowUpRight className="h-4 w-4"/></Link></div></div>
         <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Статус</div><div className="mt-2 font-semibold text-gray-900">{STATUS[selected.status]||selected.status}</div></div><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Приоритет</div><span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${priorityClass(selected.priority)}`}>{PRIORITY[selected.priority]||selected.priority}</span></div><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Дедлайн</div><div className="mt-2 font-semibold text-gray-900">{formatDate(selected.deadline)}</div></div><div className="rounded-lg bg-gray-50 p-4"><div className="text-xs text-gray-500">Команда</div><div className="mt-2 text-sm font-medium text-gray-900">{[selected.responsible,selected.engineer].filter(Boolean).join(' · ')||'Не назначена'}</div></div></div>
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.2fr]"><div><div className="mb-3 flex items-end justify-between"><div><div className="text-sm font-semibold text-gray-900">Прогресс задач</div><div className="mt-1 text-xs text-gray-500">{selected.completedTasks} из {selected.totalTasks} выполнено</div></div><div className="text-2xl font-bold text-gray-900">{selected.completionRate.toFixed(0)}%</div></div><Progress value={selected.completionRate}/><div className="mt-5 grid grid-cols-3 gap-3 text-center"><div className="rounded-lg border p-3"><div className="text-xl font-bold text-blue-600">{selected.activeTasks}</div><div className="text-xs text-gray-500">активно</div></div><div className="rounded-lg border p-3"><div className="text-xl font-bold text-red-600">{selected.overdueTasks}</div><div className="text-xs text-gray-500">просрочено</div></div><div className="rounded-lg border p-3"><div className="text-xl font-bold text-orange-600">{selected.highPriorityTasks}</div><div className="text-xs text-gray-500">срочных</div></div></div></div><div>{selected.tasksByStatus.length?<ResponsiveContainer width="100%" height={230}><PieChart><Pie data={selected.tasksByStatus} dataKey="value" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={3}>{selected.tasksByStatus.map(i=><Cell key={i.name} fill={i.color}/>)}</Pie><Tooltip/><Legend/></PieChart></ResponsiveContainer>:<div className="flex h-[230px] items-center justify-center bg-gray-50 text-gray-500">В проекте пока нет задач</div>}</div></div>
+        <div className="mt-7 border-t pt-6">
+          <h3 className="text-base font-semibold text-gray-900">Задачи по дате добавления</h3>
+          <p className="mt-1 text-xs text-gray-500">По горизонтали — время, по вертикали — задачи в порядке их создания</p>
+          <div className="mt-5"><TaskCreationTimeline tasks={selected.taskTimeline||[]}/></div>
+        </div>
       </section>:<div className="rounded-xl border bg-white py-16 text-center text-gray-500">Проектов пока нет</div>}
     </div>}
   </div>

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getUserProjectRole } from '@/lib/project-permissions';
 import { sendEmail, emailTemplates } from '@/lib/email';
 import { isAdminEmail } from '@/lib/admin';
+import { sendCommentNotifications } from '@/lib/comment-notifications';
 
 const responsibleUserIdFrom = (customFields: unknown) => {
   if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
@@ -136,6 +137,15 @@ export async function PUT(
       return NextResponse.json({ error: 'Проект не найден' }, { status: 404 });
     }
 
+    const deadlineChanged = body.deadline !== undefined && oldProject.deadline !== body.deadline;
+    const deadlineChangeComment = String(body.deadlineChangeComment || '').trim();
+    if (deadlineChanged && !deadlineChangeComment) {
+      return NextResponse.json(
+        { error: 'Укажите причину переноса дедлайна' },
+        { status: 400 },
+      );
+    }
+
     const project = await prisma.project.update({
       where: { id: projectId },
       data: {
@@ -190,7 +200,7 @@ export async function PUT(
     if (oldProject.priority !== project.priority) {
       changes.push(`приоритет с "${oldProject.priority}" на "${project.priority}"`);
     }
-    if (oldProject.deadline !== body.deadline) {
+    if (deadlineChanged) {
       changes.push(`дедлайн с "${oldProject.deadline}" на "${body.deadline}"`);
     }
     const responsibleChanged = oldProject.responsible !== project.responsible
@@ -211,6 +221,7 @@ export async function PUT(
       changes.push(`теги проекта`);
     }
 
+    let deadlineComment: { id: number; author: string; date: string; text: string } | null = null;
     if (changes.length > 0) {
       await prisma.projectHistory.create({
         data: {
@@ -218,9 +229,48 @@ export async function PUT(
           date: new Date().toISOString(),
           user: currentUser.name || currentUser.email,
           action: 'Изменён проект',
-          details: changes.join(', '),
+          details: deadlineChanged
+            ? `${changes.join(', ')}. Причина: ${deadlineChangeComment}`
+            : changes.join(', '),
         },
       });
+
+      if (deadlineChanged) {
+        const now = new Date().toISOString();
+        [deadlineComment] = await prisma.$transaction([
+          prisma.comment.create({
+            data: {
+              author: currentUser.name || currentUser.email,
+              text: deadlineChangeComment,
+              date: now,
+              userId: currentUser.id,
+              projectId,
+            },
+            select: { id: true, author: true, date: true, text: true },
+          }),
+          prisma.projectHistory.create({
+            data: {
+              projectId,
+              date: now,
+              user: currentUser.name || currentUser.email,
+              userId: currentUser.id,
+              action: 'Добавлен комментарий',
+              details: `Причина переноса дедлайна: ${deadlineChangeComment}`,
+            },
+          }),
+        ]);
+
+        try {
+          await sendCommentNotifications({
+            projectId,
+            text: deadlineChangeComment,
+            authorName: currentUser.name || currentUser.email,
+            authorEmail: currentUser.email,
+          });
+        } catch (emailError) {
+          console.error('[DEADLINE_COMMENT_EMAIL] Failed:', emailError);
+        }
+      }
 
       try {
         const responsibleUserId = responsibleUserIdFrom(project.customFields);
@@ -264,9 +314,10 @@ export async function PUT(
       ...project,
       owner: project.User,
       tasks: project.Task.map(task => ({ ...task, comments: task.Comment })),
-      comments: project.Comment,
+      comments: deadlineComment ? [deadlineComment, ...project.Comment] : project.Comment,
       history: project.ProjectHistory,
       attachments: project.Attachment,
+      deadlineComment,
     });
   } catch (error) {
     console.error('Error updating project:', error);

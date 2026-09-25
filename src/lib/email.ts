@@ -113,6 +113,17 @@ export const emailTemplates = {
       </div>
     `,
   }),
+  commentAdded: (data: { projectName: string; taskTitle?: string; comment: string; author: string; projectUrl?: string }) => ({
+    subject: `Новый комментарий — ${data.taskTitle || data.projectName}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Добавлен комментарий</h2>
+        <p><strong>${data.author}</strong> добавил комментарий ${data.taskTitle ? `к задаче <strong>${data.taskTitle}</strong> в проекте` : 'к проекту'} <strong>${data.projectName}</strong>.</p>
+        <div style="background-color: #f3f4f6; padding: 12px; border-radius: 6px; margin: 16px 0; white-space: pre-wrap;">${data.comment}</div>
+        ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 16px 0;">Открыть проект</a>` : ''}
+      </div>
+    `,
+  }),
 };
 
 export async function sendVerificationEmail(email: string, verifyUrl: string) {

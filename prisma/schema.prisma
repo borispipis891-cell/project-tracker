@@ -136,6 +136,48 @@ model Task {
   @@index([deletedAt])
 }
 
+model EmailTaskDraft {
+  id              String    @id @default(cuid())
+  messageId       String    @unique
+  mailboxUid      Int?
+  senderName      String?
+  senderEmail     String
+  subject         String
+  bodyText        String
+  attachmentNames String[]  @default([])
+  emailReceivedAt DateTime
+  status          String    @default("pending")
+  title           String
+  description     String    @default("")
+  priority        String    @default("medium")
+  receivedAt      String
+  deadline        String    @default("")
+  projectId       Int?
+  responsible     String?
+  responsibleId   String?
+  confidence      Float     @default(0)
+  agentNote       String    @default("")
+  agentModel      String?
+  errorMessage    String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdTaskId   Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([projectId])
+  @@index([senderEmail])
+}
+
+model EmailTaskSyncState {
+  id          String   @id
+  lastUid     Int      @default(0)
+  uidValidity String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model User {
   id                   String              @id @default(cuid())
   name                 String
@@ -148,7 +190,7 @@ model User {
   status               String              @default("active")
   plan                 String              @default("free")
   permissions          Json                @default("{}")
-  notificationSettings Json                @default("{\"emailOnInvite\": true, \"emailOnDeadline\": true, \"emailOnProjectChange\": false}")
+  notificationSettings Json                @default("{\"emailOnInvite\": true, \"emailOnDeadline\": true, \"emailOnProjectChange\": false, \"emailOnComment\": true, \"projectScope\": \"all\"}")
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @default(now())
   Comment              Comment[]

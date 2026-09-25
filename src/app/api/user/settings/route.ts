@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
+import { getNotificationSettings } from '@/lib/notification-settings';
+import type { Prisma } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +26,9 @@ export async function GET() {
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
     }
 
-    return NextResponse.json(user);
+    return NextResponse.json({
+      notificationSettings: getNotificationSettings(user.notificationSettings),
+    });
   } catch (error) {
     console.error('Error fetching user settings:', error);
     return NextResponse.json(
@@ -52,14 +56,16 @@ export async function PUT(request: Request) {
     const user = await prisma.user.update({
       where: { email: session.user.email },
       data: {
-        notificationSettings: notificationSettings,
+        notificationSettings: getNotificationSettings(notificationSettings) as unknown as Prisma.InputJsonValue,
       },
       select: {
         notificationSettings: true,
       },
     });
 
-    return NextResponse.json(user);
+    return NextResponse.json({
+      notificationSettings: getNotificationSettings(user.notificationSettings),
+    });
   } catch (error) {
     console.error('Error updating user settings:', error);
     return NextResponse.json(

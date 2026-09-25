@@ -4,12 +4,14 @@ import { redirect } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, Palette, HardDrive } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Calendar, Settings, LogOut, Users, User, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, Palette, HardDrive, ExternalLink } from 'lucide-react';
 import { ReactNode } from 'react';
 import { isAdminEmail } from '@/lib/admin';
+import { SidebarInfo } from '@/components/SidebarInfo';
 
 type Theme = 'light' | 'dark' | 'palette';
 const YANDEX_DISK_URL = 'https://disk.yandex.ru/edit/d/3hX6DFXz59K6wF1aaFhfZCPegnqahzm72s0qoIz-cKg6TTQ4WXZKQWZ3UQ?from_public=1';
+const ECS_SMEC_URL = 'https://ecs.smec-cn.com/uaa/login';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<any>(null);
@@ -89,6 +91,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return null;
   }
 
+  const isAdmin = isAdminEmail(session.user?.email);
   const navItems = [
     { href: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' },
     { href: '/projects', icon: FolderKanban, label: 'Проекты' },
@@ -97,7 +100,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
-  const isAdmin = isAdminEmail(session.user?.email);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -174,7 +176,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </button>
           </div>
 
-          <nav className="p-4 space-y-1">
+          <nav className="h-full space-y-1 overflow-y-auto p-4">
             {navItems.map((item) => {
               const Icon = item.icon;
               return (
@@ -243,7 +245,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <HardDrive className="w-5 h-5 flex-shrink-0" />
                 {!sidebarCollapsed && <span>Яндекс Диск ↗</span>}
               </a>
+              <a
+                href={ECS_SMEC_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`mt-1 flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition`}
+                title={sidebarCollapsed ? 'ECS SMEC-CN' : undefined}
+              >
+                <ExternalLink className="w-5 h-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span>ECS SMEC-CN ↗</span>}
+              </a>
             </div>
+
+            {!sidebarCollapsed && <SidebarInfo />}
           </nav>
         </aside>
 
@@ -261,7 +275,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <nav className="p-4 space-y-1">
+          <nav className="h-full space-y-1 overflow-y-auto p-4">
             {navItems.map((item) => {
               const Icon = item.icon;
               return (
@@ -325,7 +339,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <HardDrive className="w-5 h-5" />
                 <span>Яндекс Диск ↗</span>
               </a>
+              <a
+                href={ECS_SMEC_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMobileMenuOpen(false)}
+                className="mt-1 flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition"
+              >
+                <ExternalLink className="w-5 h-5" />
+                <span>ECS SMEC-CN ↗</span>
+              </a>
             </div>
+
+            <SidebarInfo />
           </nav>
         </aside>
 

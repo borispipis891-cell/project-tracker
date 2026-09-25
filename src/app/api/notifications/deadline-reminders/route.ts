@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendEmail, emailTemplates } from '@/lib/email';
+import { getNotificationSettings } from '@/lib/notification-settings';
+
+const responsibleUserIdFrom = (customFields: unknown) => {
+  if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
+  const value = (customFields as Record<string, unknown>).__responsibleUserId;
+  return typeof value === 'string' && value ? value : null;
+};
 
 // Vercel Cron вызывает endpoint методом GET. POST оставлен для ручной проверки.
 async function sendDeadlineReminders(request: Request) {
@@ -34,7 +41,7 @@ async function sendDeadlineReminders(request: Request) {
 
     const recipients = await prisma.user.findMany({
       where: { status: 'active', isBlocked: false, emailVerified: true },
-      select: { email: true, notificationSettings: true },
+      select: { id: true, name: true, email: true, notificationSettings: true },
     });
 
     const notifications = [];
@@ -46,8 +53,12 @@ async function sendDeadlineReminders(request: Request) {
       // Проекты общие, поэтому уведомляем всех активных пользователей,
       // которые не отключили напоминания о дедлайнах.
       for (const recipient of recipients) {
-        const userSettings = recipient.notificationSettings as any;
-        const shouldNotify = !userSettings || userSettings.emailOnDeadline !== false;
+        const userSettings = getNotificationSettings(recipient.notificationSettings);
+        const responsibleUserId = responsibleUserIdFrom(project.customFields);
+        const matchesScope = userSettings.projectScope === 'all'
+          || recipient.id === responsibleUserId
+          || recipient.name === project.responsible;
+        const shouldNotify = userSettings.emailOnDeadline && matchesScope;
 
         if (shouldNotify) {
           const emailData = emailTemplates.deadlineReminder({

@@ -65,6 +65,10 @@ interface RegisteredUser {
   email: string;
 }
 
+type PendingDeadlineChange =
+  | { kind: 'project'; projectId: number; newDeadline: string; origin: 'inline' | 'projectModal' }
+  | { kind: 'task'; projectId: number; taskId: number; newDeadline: string; origin: 'inline' | 'taskModal' };
+
 const PRIORITY_LABELS: Record<Priority, string> = {
   critical: 'Критический',
   high: 'Высокий',
@@ -228,6 +232,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
   const [currentUserName, setCurrentUserName] = useState('');
+  const [currentUserId, setCurrentUserId] = useState('');
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentUserRole, setCurrentUserRole] = useState<string>('user');
@@ -250,6 +255,13 @@ export default function ProjectsPage() {
   const [newProjectColor, setNewProjectColor] = useState('#3B82F6');
   const [newProjectTags, setNewProjectTags] = useState<string[]>([]);
   const [projectSubmitting, setProjectSubmitting] = useState(false);
+  const [createFirstTask, setCreateFirstTask] = useState(false);
+  const [firstTaskTitle, setFirstTaskTitle] = useState('');
+  const [firstTaskDeadline, setFirstTaskDeadline] = useState('');
+  const [firstTaskResponsibleId, setFirstTaskResponsibleId] = useState('');
+  const [pendingDeadlineChange, setPendingDeadlineChange] = useState<PendingDeadlineChange | null>(null);
+  const [deadlineChangeComment, setDeadlineChangeComment] = useState('');
+  const [deadlineChangeSaving, setDeadlineChangeSaving] = useState(false);
   const [excelExporting, setExcelExporting] = useState(false);
   const [editingTask, setEditingTask] = useState<{ projectId: number; task: Task } | null>(null);
   const [creatingTaskForProjectId, setCreatingTaskForProjectId] = useState<number | null>(null);
@@ -281,6 +293,7 @@ export default function ProjectsPage() {
     email: '',
     notifyDays: 3
   });
+  const [notificationScope, setNotificationScope] = useState<'all' | 'responsible'>('all');
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
     priority: 120,
     name: 250,
@@ -315,11 +328,14 @@ export default function ProjectsPage() {
     Promise.all([
       fetch('/api/auth/session').then(response => response.json()),
       fetch('/api/users').then(response => response.ok ? response.json() : []),
+      fetch('/api/user/settings').then(response => response.ok ? response.json() : null),
     ])
-      .then(([session, users]) => {
+      .then(([session, users, settings]) => {
         const admin = isAdminEmail(session?.user?.email);
         setRegisteredUsers(users);
         setCurrentUserName(session?.user?.name || session?.user?.email || 'Пользователь');
+        setCurrentUserId(session?.user?.id || '');
+        setNotificationScope(settings?.notificationSettings?.projectScope === 'responsible' ? 'responsible' : 'all');
         setCurrentUserRole(admin ? 'admin' : 'user');
         setPermissions(current => ({
           ...current,
@@ -448,6 +464,10 @@ export default function ProjectsPage() {
     return Math.round((d.getTime() - TODAY.getTime()) / 86400000);
   };
 
+  const isProjectInNotificationScope = (project: Project) => notificationScope === 'all'
+    || (!!currentUserId && project.customFields?.__responsibleUserId === currentUserId)
+    || (!!currentUserName && project.responsible === currentUserName);
+
   // Check for notifications and send emails periodically
   useEffect(() => {
     const interval = setInterval(() => {
@@ -455,6 +475,7 @@ export default function ProjectsPage() {
 
       const upcomingDeadlines = projects.filter(p => {
         if (p.status === 'done') return false;
+        if (!isProjectInNotificationScope(p)) return false;
         const days = daysUntil(p.deadline);
         return days !== null && days >= 0 && days <= 1;
       });
@@ -465,10 +486,14 @@ export default function ProjectsPage() {
 
         if (!localStorage.getItem(notificationKey)) {
           if (Notification.permission === 'granted') {
-            new Notification('⚠️ Приближается дедлайн', {
+            const notification = new Notification('⚠️ Приближается дедлайн', {
               body: `Проект "${project.name}" - ${days === 0 ? 'сегодня' : 'завтра'}!`,
               icon: '/favicon.ico'
             });
+            notification.onclick = () => {
+              window.focus();
+              window.location.href = `/projects?project=${project.id}`;
+            };
             localStorage.setItem(notificationKey, 'true');
           }
         }
@@ -478,6 +503,7 @@ export default function ProjectsPage() {
       if (emailSettings.enabled && emailSettings.email) {
         const emailDeadlines = projects.filter(p => {
           if (p.status === 'done') return false;
+          if (!isProjectInNotificationScope(p)) return false;
           const days = daysUntil(p.deadline);
           return days !== null && days >= 0 && days <= emailSettings.notifyDays;
         });
@@ -495,7 +521,7 @@ export default function ProjectsPage() {
     }, 60000); // Check every minute
 
     return () => clearInterval(interval);
-  }, [projects, emailSettings]);
+  }, [projects, emailSettings, notificationScope, currentUserId, currentUserName]);
 
   const requestNotificationPermission = () => {
     if (!('Notification' in window)) {
@@ -754,6 +780,40 @@ export default function ProjectsPage() {
       return updated;
     });
   };
+
+  const collapseAllProjects = () => {
+    setProjects(current => current.map(project => ({ ...project, expanded: false })));
+    localStorage.setItem('expandedProjectIds', '[]');
+  };
+
+  const openProjectFromNotification = (projectId: number) => {
+    setActiveFilter('all');
+    setSelectedEmployeeId(null);
+    setSearchQuery('');
+    setShowNotifications(false);
+    setProjects(current => current.map(project => ({
+      ...project,
+      expanded: project.id === projectId ? true : project.expanded,
+    })));
+    const expandedIds = projects
+      .filter(project => project.expanded || project.id === projectId)
+      .map(project => project.id);
+    localStorage.setItem('expandedProjectIds', JSON.stringify(expandedIds));
+    window.history.replaceState(null, '', `/projects?project=${projectId}`);
+    window.setTimeout(() => {
+      document.getElementById(`project-row-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  };
+
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const projectId = Number(new URLSearchParams(window.location.search).get('project'));
+    if (projectId && projects.some(project => project.id === projectId)) {
+      openProjectFromNotification(projectId);
+    }
+    // Deep-link is applied once after the initial project list is loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects.length]);
 
   const addCustomColumn = () => {
     const label = prompt('Введите название столбца:');
@@ -1154,7 +1214,7 @@ export default function ProjectsPage() {
     }
   };
 
-  const saveEditedTask = async () => {
+  const saveEditedTask = async (deadlineComment?: string) => {
     if (!editingTask) return;
     const title = (document.getElementById('t_title') as HTMLInputElement).value.trim();
     if (!title) {
@@ -1182,11 +1242,23 @@ export default function ProjectsPage() {
         : undefined,
     };
 
+    if (updatedTask.deadline !== editingTask.task.deadline && !deadlineComment?.trim()) {
+      setPendingDeadlineChange({
+        kind: 'task',
+        projectId: editingTask.projectId,
+        taskId: editingTask.task.id,
+        newDeadline: updatedTask.deadline,
+        origin: 'taskModal',
+      });
+      setDeadlineChangeComment('');
+      return;
+    }
+
     try {
       const response = await fetch(`/api/projects/${editingTask.projectId}/tasks/${editingTask.task.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedTask),
+        body: JSON.stringify({ ...updatedTask, deadlineChangeComment: deadlineComment }),
       });
       if (!response.ok) throw new Error('Не удалось сохранить задачу');
       const savedTask = await response.json();
@@ -1227,6 +1299,7 @@ export default function ProjectsPage() {
     setProjects(current => current.map(project => project.id === projectId
       ? { ...project, comments: [...(project.comments || []), comment] }
       : project));
+    addHistory(projectId, 'Добавлен комментарий', text);
   };
 
   const addTaskComment = async (projectId: number, taskId: number, text: string) => {
@@ -1243,6 +1316,8 @@ export default function ProjectsPage() {
         ? { ...task, comments: [...(task.comments || []), comment] }
         : task),
     } : project));
+    const taskTitle = projects.find(project => project.id === projectId)?.tasks.find(task => task.id === taskId)?.title;
+    addHistory(projectId, 'Добавлен комментарий', taskTitle ? `Задача «${taskTitle}»: ${text}` : text);
   };
 
   const deleteComment = async (commentId?: number) => {
@@ -1267,16 +1342,13 @@ export default function ProjectsPage() {
     }));
   };
 
-  const createProject = async () => {
+  const createProject = async (deadlineComment?: string) => {
     if (projectSubmittingRef.current) return;
     const name = (document.getElementById('f_name') as HTMLInputElement).value.trim();
     if (!name) {
       alert('Укажите название проекта');
       return;
     }
-
-    projectSubmittingRef.current = true;
-    setProjectSubmitting(true);
 
     const projectStatus = (document.getElementById('f_status') as HTMLSelectElement).value as ProjectStatus;
     const projectData = {
@@ -1298,13 +1370,32 @@ export default function ProjectsPage() {
       },
     };
 
+    if (editingProject && projectData.deadline !== editingProject.deadline && !deadlineComment?.trim()) {
+      setPendingDeadlineChange({
+        kind: 'project',
+        projectId: editingProject.id,
+        newDeadline: projectData.deadline,
+        origin: 'projectModal',
+      });
+      setDeadlineChangeComment('');
+      return;
+    }
+
+    if (!editingProject && createFirstTask && !firstTaskTitle.trim()) {
+      alert('Укажите название первой задачи');
+      return;
+    }
+
+    projectSubmittingRef.current = true;
+    setProjectSubmitting(true);
+
     try {
       if (editingProject) {
         // Update existing project
         const response = await fetch(`/api/projects/${editingProject.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(projectData),
+          body: JSON.stringify({ ...projectData, deadlineChangeComment: deadlineComment }),
         });
 
         if (!response.ok) {
@@ -1322,7 +1413,21 @@ export default function ProjectsPage() {
         const response = await fetch('/api/projects', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...projectData, tasks: [] }),
+          body: JSON.stringify({
+            ...projectData,
+            tasks: createFirstTask ? [{
+              title: firstTaskTitle.trim(),
+              status: 'not_started',
+              priority: 'medium',
+              receivedAt: projectData.receivedAt,
+              deadline: firstTaskDeadline || projectData.deadline,
+              responsible: registeredUsers.find(user => user.id === firstTaskResponsibleId)?.name || projectData.responsible,
+              engineer: projectData.engineer,
+              customFields: {
+                __responsibleUserId: firstTaskResponsibleId || projectData.customFields.__responsibleUserId,
+              },
+            }] : [],
+          }),
         });
 
         if (!response.ok) {
@@ -1347,11 +1452,78 @@ export default function ProjectsPage() {
     setEditingProject(null);
     setNewProjectColor('#3B82F6');
     setNewProjectTags([]);
+    setCreateFirstTask(false);
+    setFirstTaskTitle('');
+    setFirstTaskDeadline('');
+    setFirstTaskResponsibleId('');
 
     // Reset form
     ['f_name', 'f_received', 'f_deadline', 'f_customer', 'f_pss', 'f_reg', 'f_responsible', 'f_engineer'].forEach(id => {
       (document.getElementById(id) as HTMLInputElement).value = '';
     });
+  };
+
+  const confirmDeadlineChange = async () => {
+    const reason = deadlineChangeComment.trim();
+    if (!pendingDeadlineChange || !reason) return;
+
+    setDeadlineChangeSaving(true);
+    try {
+      if (pendingDeadlineChange.origin === 'projectModal') {
+        await createProject(reason);
+      } else if (pendingDeadlineChange.origin === 'taskModal') {
+        await saveEditedTask(reason);
+      } else if (pendingDeadlineChange.kind === 'project') {
+        const project = projects.find(item => item.id === pendingDeadlineChange.projectId);
+        if (!project) throw new Error('Проект не найден');
+        const response = await fetch(`/api/projects/${project.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...project,
+            deadline: pendingDeadlineChange.newDeadline,
+            deadlineChangeComment: reason,
+          }),
+        });
+        const saved = await response.json();
+        if (!response.ok) throw new Error(saved.error || 'Не удалось перенести дедлайн');
+        setProjects(current => current.map(item => item.id === project.id
+          ? applySavedTaskOrder({ ...saved, expanded: item.expanded })
+          : item));
+      } else {
+        const project = projects.find(item => item.id === pendingDeadlineChange.projectId);
+        const task = project?.tasks.find(item => item.id === pendingDeadlineChange.taskId);
+        if (!project || !task) throw new Error('Задача не найдена');
+        const response = await fetch(`/api/projects/${project.id}/tasks/${task.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...task,
+            deadline: pendingDeadlineChange.newDeadline,
+            deadlineChangeComment: reason,
+          }),
+        });
+        const saved = await response.json();
+        if (!response.ok) throw new Error(saved.error || 'Не удалось перенести дедлайн');
+        setProjects(current => current.map(item => {
+          if (item.id !== project.id) return item;
+          const tasks = item.tasks.map(currentTask => currentTask.id === task.id ? {
+            ...saved,
+            comments: saved.deadlineComment
+              ? [...(currentTask.comments || []), saved.deadlineComment]
+              : currentTask.comments,
+          } : currentTask);
+          return { ...item, tasks, deadline: latestTaskDeadline(tasks) };
+        }));
+      }
+
+      setPendingDeadlineChange(null);
+      setDeadlineChangeComment('');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Не удалось перенести дедлайн');
+    } finally {
+      setDeadlineChangeSaving(false);
+    }
   };
 
   const getStatusColor = (status: ProjectStatus): string => {
@@ -1681,10 +1853,22 @@ export default function ProjectsPage() {
             )}
             </div>
           )}
+          <button
+            onClick={collapseAllProjects}
+            disabled={!projects.some(project => project.expanded)}
+            className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Свернуть все развернутые проекты"
+          >
+            Свернуть все детали
+          </button>
           {permissions.canCreate && (
             <button
               onClick={() => {
                 setEditingProject(null);
+                setCreateFirstTask(false);
+                setFirstTaskTitle('');
+                setFirstTaskDeadline('');
+                setFirstTaskResponsibleId('');
                 setShowModal(true);
               }}
               className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
@@ -1717,6 +1901,7 @@ export default function ProjectsPage() {
               {(() => {
                 const notificationCount = projects.filter(p => {
                   if (p.status === 'done') return false;
+                  if (!isProjectInNotificationScope(p)) return false;
                   const days = daysUntil(p.deadline);
                   return days !== null && days >= -7 && days <= 3;
                 }).length;
@@ -1743,6 +1928,7 @@ export default function ProjectsPage() {
                 {(() => {
                   const upcomingDeadlines = projects.filter(p => {
                     if (p.status === 'done') return false;
+                    if (!isProjectInNotificationScope(p)) return false;
                     const days = daysUntil(p.deadline);
                     return days !== null && days >= -7 && days <= 3;
                   }).sort((a, b) => {
@@ -1767,6 +1953,7 @@ export default function ProjectsPage() {
                     return (
                       <div
                         key={project.id}
+                        onClick={() => openProjectFromNotification(project.id)}
                         className="px-3 py-2 border-b border-gray-200 bg-blue-50 flex gap-2 text-sm hover:bg-blue-100 cursor-pointer"
                       >
                         <span
@@ -2002,7 +2189,7 @@ export default function ProjectsPage() {
               filteredProjects.map(project => (
                 <>
                   {/* Project Row */}
-                  <tr key={project.id} className="border-b border-gray-200 hover:bg-gray-50">
+                  <tr id={`project-row-${project.id}`} key={project.id} className="border-b border-gray-200 hover:bg-gray-50">
                     <td></td>
                     {columnOrder.map(colId => {
                       if (!isColumnVisible(colId)) return null;
@@ -2083,7 +2270,16 @@ export default function ProjectsPage() {
                               <input
                                 type="date"
                                 value={project.deadline}
-                                onChange={(e) => updateProject(project.id, 'deadline', e.target.value)}
+                                onChange={(e) => {
+                                  if (e.target.value === project.deadline) return;
+                                  setPendingDeadlineChange({
+                                    kind: 'project',
+                                    projectId: project.id,
+                                    newDeadline: e.target.value,
+                                    origin: 'inline',
+                                  });
+                                  setDeadlineChangeComment('');
+                                }}
                                 className="deadline-input text-sm font-semibold border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full text-gray-900"
                               />
                             </div>
@@ -2334,7 +2530,17 @@ export default function ProjectsPage() {
                                 <input
                                   type="date"
                                   value={task.deadline}
-                                  onChange={(e) => updateTask(project.id, task.id, 'deadline', e.target.value)}
+                                  onChange={(e) => {
+                                    if (e.target.value === task.deadline) return;
+                                    setPendingDeadlineChange({
+                                      kind: 'task',
+                                      projectId: project.id,
+                                      taskId: task.id,
+                                      newDeadline: e.target.value,
+                                      origin: 'inline',
+                                    });
+                                    setDeadlineChangeComment('');
+                                  }}
                                   className="deadline-input text-sm border border-transparent bg-transparent rounded px-0.5 hover:border-gray-300 focus:border-blue-600 outline-none w-full"
                                 />
                               </div>
@@ -2597,6 +2803,54 @@ export default function ProjectsPage() {
                 />
               </div>
             </div>
+            {!editingProject && (
+              <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-900">
+                  <input
+                    type="checkbox"
+                    checked={createFirstTask}
+                    onChange={(event) => setCreateFirstTask(event.target.checked)}
+                    className="h-4 w-4 rounded text-blue-600"
+                  />
+                  Сразу создать задачу
+                </label>
+                {createFirstTask && (
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Название задачи</label>
+                      <input
+                        value={firstTaskTitle}
+                        onChange={(event) => setFirstTaskTitle(event.target.value)}
+                        placeholder="Например: Подготовить чертежи"
+                        className="w-full rounded-md border border-gray-300 px-2 py-2 text-sm outline-none focus:border-blue-600"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">Дедлайн</label>
+                        <input
+                          type="date"
+                          value={firstTaskDeadline}
+                          onChange={(event) => setFirstTaskDeadline(event.target.value)}
+                          className="w-full rounded-md border border-gray-300 px-2 py-2 text-sm outline-none focus:border-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">Ответственный</label>
+                        <select
+                          value={firstTaskResponsibleId}
+                          onChange={(event) => setFirstTaskResponsibleId(event.target.value)}
+                          className="w-full rounded-md border border-gray-300 px-2 py-2 text-sm outline-none focus:border-blue-600"
+                        >
+                          <option value="">Как у проекта</option>
+                          {registeredUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => {
@@ -2608,7 +2862,7 @@ export default function ProjectsPage() {
                 Отмена
               </button>
               <button
-                onClick={createProject}
+                onClick={() => void createProject()}
                 disabled={projectSubmitting}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -2687,10 +2941,49 @@ export default function ProjectsPage() {
                 Отмена
               </button>
               <button
-                onClick={editingTask ? saveEditedTask : createTask}
+                onClick={() => void (editingTask ? saveEditedTask() : createTask())}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
               >
                 {editingTask ? 'Сохранить' : 'Создать задачу'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deadline change reason modal */}
+      {pendingDeadlineChange && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900 bg-opacity-45 p-5">
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="text-base font-semibold text-gray-900">Причина переноса дедлайна</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Новая дата: <strong>{formatDate(pendingDeadlineChange.newDeadline)}</strong>. Чтобы сохранить изменение, оставьте комментарий.
+            </p>
+            <textarea
+              value={deadlineChangeComment}
+              onChange={(event) => setDeadlineChangeComment(event.target.value)}
+              placeholder="Объясните, почему меняется срок..."
+              rows={4}
+              autoFocus
+              className="mt-4 w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-600"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setPendingDeadlineChange(null);
+                  setDeadlineChangeComment('');
+                }}
+                disabled={deadlineChangeSaving}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => void confirmDeadlineChange()}
+                disabled={!deadlineChangeComment.trim() || deadlineChangeSaving}
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deadlineChangeSaving ? 'Сохранение...' : 'Перенести дедлайн'}
               </button>
             </div>
           </div>
@@ -2728,14 +3021,15 @@ export default function ProjectsPage() {
                                   ...p,
                                   comments: p.comments?.filter((_, i) => i !== idx) || [],
                                 } : p));
+                                addHistory(showProjectComments, 'Удалён комментарий', comment.text);
                               } catch (error) {
                                 alert(error instanceof Error ? error.message : 'Не удалось удалить комментарий');
                               }
                             }}
-                            className="ml-auto text-red-600 hover:text-red-800 text-xs"
+                            className="ml-auto rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                             title="Удалить комментарий"
                           >
-                            ✕
+                            Удалить
                           </button>
                         </div>
                         <p className="text-sm text-gray-800">{comment.text}</p>
@@ -2815,14 +3109,19 @@ export default function ProjectsPage() {
                                     ? { ...t, comments: t.comments?.filter((_, i) => i !== idx) || [] }
                                     : t),
                                 } : p));
+                                addHistory(
+                                  showTaskComments.projectId,
+                                  'Удалён комментарий',
+                                  `Задача «${task.title}»: ${comment.text}`,
+                                );
                               } catch (error) {
                                 alert(error instanceof Error ? error.message : 'Не удалось удалить комментарий');
                               }
                             }}
-                            className="ml-auto text-red-600 hover:text-red-800 text-xs"
+                            className="ml-auto rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                             title="Удалить комментарий"
                           >
-                            ✕
+                            Удалить
                           </button>
                         </div>
                         <p className="text-sm text-gray-800">{comment.text}</p>
@@ -2874,11 +3173,13 @@ export default function ProjectsPage() {
           className="fixed inset-0 bg-gray-900 bg-opacity-45 flex items-center justify-center z-50 p-5"
         >
           <div
-            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto p-6"
+            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-base font-semibold mb-4">История изменений</h2>
-            <div className="space-y-3">
+            <div className="flex-none border-b border-gray-200 px-6 py-4">
+              <h2 className="text-base font-semibold">История изменений</h2>
+            </div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
               {(() => {
                 const project = projects.find(p => p.id === showProjectHistory);
                 if (!project || !project.history || project.history.length === 0) {
@@ -2892,7 +3193,7 @@ export default function ProjectsPage() {
                   ));
               })()}
             </div>
-            <div className="flex justify-end mt-4">
+            <div className="flex flex-none justify-end border-t border-gray-200 bg-white px-6 py-4">
               <button
                 onClick={() => setShowProjectHistory(null)}
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50"

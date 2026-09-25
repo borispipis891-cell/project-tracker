@@ -2,20 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
-import { emailTemplates, sendEmail } from '@/lib/email';
-
-const escapeHtml = (value: string) => value
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&#039;');
-
-const responsibleUserIdFrom = (customFields: unknown) => {
-  if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return null;
-  const value = (customFields as Record<string, unknown>).__responsibleUserId;
-  return typeof value === 'string' && value ? value : null;
-};
+import { sendCommentNotifications } from '@/lib/comment-notifications';
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -27,57 +14,59 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Комментарий и объект обязательны' }, { status: 400 });
   }
 
-  const comment = await prisma.comment.create({
-    data: {
-      author: session.user.name || session.user.email,
-      text: normalizedText,
-      date: new Date().toISOString(),
-      userId: session.user.id,
-      projectId: taskId ? null : Number(projectId),
-      taskId: taskId ? Number(taskId) : null,
-    },
-    select: { id: true, author: true, date: true, text: true },
+  const resolvedTask = taskId ? await prisma.task.findUnique({
+    where: { id: Number(taskId) },
+    select: { id: true, title: true, projectId: true },
+  }) : null;
+  const resolvedProjectId = resolvedTask?.projectId || Number(projectId);
+  if (!resolvedProjectId || (taskId && !resolvedTask)) {
+    return NextResponse.json({ error: 'Проект или задача не найдены' }, { status: 404 });
+  }
+
+  const projectExists = await prisma.project.findFirst({
+    where: { id: resolvedProjectId, deletedAt: null },
+    select: { id: true },
   });
+  if (!projectExists) return NextResponse.json({ error: 'Проект не найден' }, { status: 404 });
+
+  const author = session.user.name || session.user.email;
+  const now = new Date().toISOString();
+  const [comment] = await prisma.$transaction([
+    prisma.comment.create({
+      data: {
+        author,
+        text: normalizedText,
+        date: now,
+        userId: session.user.id,
+        projectId: taskId ? null : resolvedProjectId,
+        taskId: taskId ? Number(taskId) : null,
+      },
+      select: { id: true, author: true, date: true, text: true },
+    }),
+    prisma.projectHistory.create({
+      data: {
+        projectId: resolvedProjectId,
+        date: now,
+        user: author,
+        userId: session.user.id,
+        action: 'Добавлен комментарий',
+        details: resolvedTask
+          ? `Задача «${resolvedTask.title}»: ${normalizedText}`
+          : normalizedText,
+      },
+    }),
+  ]);
 
   try {
-    if (taskId) {
-      const task = await prisma.task.findUnique({
-        where: { id: Number(taskId) },
-        select: {
-          title: true,
-          responsible: true,
-          customFields: true,
-          projectId: true,
-          Project: { select: { name: true } },
-        },
-      });
-
-      if (task?.responsible) {
-        const responsibleUserId = responsibleUserIdFrom(task.customFields);
-        const responsibleUser = await prisma.user.findFirst({
-          where: {
-            ...(responsibleUserId ? { id: responsibleUserId } : { name: task.responsible }),
-            status: 'active',
-            isBlocked: false,
-          },
-          select: { email: true },
-        });
-
-        if (responsibleUser) {
-          const emailData = emailTemplates.taskUpdate({
-            projectName: escapeHtml(task.Project.name),
-            taskTitle: escapeHtml(task.title),
-            changes: `Добавлен комментарий: «${escapeHtml(normalizedText)}»`,
-            updatedBy: escapeHtml(session.user.name || session.user.email),
-            projectUrl: `${process.env.APP_URL || process.env.NEXTAUTH_URL || ''}/projects?project=${task.projectId}`,
-          });
-
-          await sendEmail({ to: responsibleUser.email, ...emailData });
-        }
-      }
-    }
+    await sendCommentNotifications({
+      projectId: resolvedProjectId,
+      taskId: taskId ? Number(taskId) : null,
+      text: normalizedText,
+      authorName: author,
+      authorEmail: session.user.email,
+    });
   } catch (emailError) {
-    console.error('[TASK_COMMENT_EMAIL] Failed:', emailError);
+    console.error('[COMMENT_EMAIL] Failed:', emailError);
   }
 
   return NextResponse.json(comment);

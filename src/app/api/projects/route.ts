@@ -166,8 +166,34 @@ export async function POST(request: Request) {
 
     console.log('[CREATE_PROJECT] Creating with data:', JSON.stringify(projectData, null, 2));
 
+    const initialTasks = Array.isArray(body.tasks)
+      ? body.tasks
+          .filter((task: unknown) => task && typeof task === 'object' && String((task as any).title || '').trim())
+          .slice(0, 10)
+          .map((task: any) => ({
+            title: String(task.title).trim(),
+            description: String(task.description || ''),
+            status: task.status || 'not_started',
+            priority: task.status === 'done' ? 'low' : task.priority || 'medium',
+            receivedAt: task.receivedAt || projectData.receivedAt,
+            deadline: task.deadline || projectData.deadline,
+            dueDate: task.dueDate || task.deadline || projectData.deadline,
+            completedAt: task.completedAt || null,
+            responsible: task.responsible || projectData.responsible || null,
+            engineer: task.engineer || projectData.engineer || null,
+            customFields: task.customFields || {},
+          }))
+      : [];
+
     const project = await prisma.project.create({
-      data: projectData,
+      data: {
+        ...projectData,
+        deadline: initialTasks.reduce(
+          (latest: string, task: { deadline: string }) => task.deadline > latest ? task.deadline : latest,
+          initialTasks.length ? '' : projectData.deadline,
+        ),
+        ...(initialTasks.length ? { Task: { create: initialTasks } } : {}),
+      },
       include: {
         User: {
           select: {
@@ -186,15 +212,22 @@ export async function POST(request: Request) {
     console.log('[CREATE_PROJECT] Project created successfully:', project.id);
 
     // Add history entry for project creation
-    await prisma.projectHistory.create({
-      data: {
+    await prisma.projectHistory.createMany({
+      data: [{
         projectId: project.id,
         date: new Date().toISOString(),
         user: currentUser.name || currentUser.email,
         userId: currentUser.id,
         action: 'Создан проект',
         details: `"${body.name}"`,
-      },
+      }, ...initialTasks.map((task: { title: string }) => ({
+        projectId: project.id,
+        date: new Date().toISOString(),
+        user: currentUser.name || currentUser.email,
+        userId: currentUser.id,
+        action: 'Добавлена задача',
+        details: `"${task.title}"`,
+      }))],
     });
 
     if (project.responsible) {
